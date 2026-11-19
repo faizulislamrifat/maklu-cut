@@ -32,7 +32,9 @@ IG_UPLOAD = "https://rupload.facebook.com/ig-api-upload/v21.0"
 IG_SCOPES = "instagram_business_basic,instagram_business_content_publish"
 TT = "https://open.tiktokapis.com/v2"
 TT_SCOPES = "user.info.basic,video.publish"
-PLATFORM_NAMES = {"youtube": "YouTube", "instagram": "Instagram", "tiktok": "TikTok"}
+FB = "https://graph.facebook.com/v21.0"
+FB_SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,publish_video"
+PLATFORM_NAMES = {"youtube": "YouTube", "instagram": "Instagram", "tiktok": "TikTok", "facebook": "Facebook"}
 
 
 def _dir() -> Path:
@@ -70,8 +72,9 @@ def _write(name, data):
 # name -> (what the platform calls the id, what it calls the secret, .env names for both)
 APPS = {"google": ("Client ID", "Client secret", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"),
         "instagram": ("Instagram app ID", "Instagram app secret", "PEAKCUT_IG_APP_ID", "PEAKCUT_IG_APP_SECRET"),
-        "tiktok": ("Client key", "Client secret", "PEAKCUT_TIKTOK_CLIENT_KEY", "PEAKCUT_TIKTOK_CLIENT_SECRET")}
-APP_FOR = {"youtube": "google", "instagram": "instagram", "tiktok": "tiktok"}
+        "tiktok": ("Client key", "Client secret", "PEAKCUT_TIKTOK_CLIENT_KEY", "PEAKCUT_TIKTOK_CLIENT_SECRET"),
+        "facebook": ("Facebook App ID", "Facebook App secret", "PEAKCUT_FB_APP_ID", "PEAKCUT_FB_APP_SECRET")}
+APP_FOR = {"youtube": "google", "instagram": "instagram", "tiktok": "tiktok", "facebook": "facebook"}
 _apps_seen = {"at": None, "data": {}}
 
 
@@ -183,6 +186,9 @@ def connect_url(platform: str) -> str:
     if platform == "instagram":
         return "https://www.instagram.com/oauth/authorize?" + urlencode({
             "client_id": cid, "redirect_uri": redirect, "response_type": "code", "scope": IG_SCOPES, "state": state})
+    if platform == "facebook":
+        return "https://www.facebook.com/v21.0/dialog/oauth?" + urlencode({
+            "client_id": cid, "redirect_uri": redirect, "response_type": "code", "scope": FB_SCOPES, "state": state})
     return "https://www.tiktok.com/v2/auth/authorize/?" + urlencode({
         "client_key": cid, "redirect_uri": redirect, "response_type": "code", "scope": TT_SCOPES, "state": state})
 
@@ -192,7 +198,7 @@ def connect_finish(platform: str, code: str, state: str) -> dict:
     code = (code or "").split("#")[0]           # Instagram adds "#_" to the code
     if not code:
         raise ValueError("The platform did not send a sign-in code. Try again.")
-    return {"youtube": _youtube_finish, "instagram": _instagram_finish, "tiktok": _tiktok_finish}[platform](code)
+    return {"youtube": _youtube_finish, "instagram": _instagram_finish, "tiktok": _tiktok_finish, "facebook": _facebook_finish}[platform](code)
 
 
 # ------------------------------------------------------------------ links the platforms can fetch a clip from
@@ -577,3 +583,70 @@ def tiktok_upload(acc, path: Path, caption: str, privacy: str = "public"):
         acc["detail"] = "Posts are private until this server's TikTok app is reviewed"
         _put(acc)
     return str(ids[0]) if ids else box["publish_id"], url
+
+
+# ------------------------------------------------------------------ Facebook
+def _facebook_finish(code: str) -> dict:
+    cid, secret = app_keys("facebook")
+    r = _check(httpx.get(f"{FB}/oauth/access_token", params={
+        "client_id": cid, "client_secret": secret, "redirect_uri": redirect_for("facebook"),
+        "code": code}, timeout=30), "Facebook sign-in")
+    user_token = r.json().get("access_token", "")
+
+    # Check for managed Facebook pages
+    try:
+        pages_resp = httpx.get(f"{FB}/me/accounts", params={"fields": "id,name,access_token,category"},
+                               headers={"Authorization": f"Bearer {user_token}"}, timeout=30)
+        pages_data = pages_resp.json() if pages_resp.status_code < 400 else {}
+        page_list = pages_data.get("data") or []
+    except Exception:
+        page_list = []
+
+    if page_list:
+        primary = page_list[0]
+        acc = {"id": f"fb_{primary['id']}", "platform": "facebook", "name": primary.get("name", "Facebook Page"),
+               "added": time.time(), "user_id": str(primary["id"]), "token": primary.get("access_token", user_token),
+               "token_time": time.time(), "detail": f"Page: {primary.get('category', 'Creator')}"}
+    else:
+        me = _check(httpx.get(f"{FB}/me", params={"fields": "id,name"},
+                              headers={"Authorization": f"Bearer {user_token}"}, timeout=30), "Reading Facebook profile").json()
+        acc = {"id": f"fb_{me['id']}", "platform": "facebook", "name": me.get("name", "Facebook Profile"),
+               "added": time.time(), "user_id": str(me["id"]), "token": user_token,
+               "token_time": time.time(), "detail": "Facebook Profile"}
+    _put(acc)
+    return acc
+
+
+def _fb_token(acc) -> str:
+    return acc["token"]
+
+
+def facebook_upload(acc, path: Path, caption: str, job_id: str = ""):
+    """Post video/reel to Facebook Page or Profile."""
+    token = _fb_token(acc)
+    auth_header = {"Authorization": f"Bearer {token}"}
+    uid = acc["user_id"]
+    if config.PUBLIC_URL.startswith("https://") and job_id:
+        r = _check(httpx.post(f"{FB}/{uid}/videos", data={
+            "description": caption, "file_url": clip_link(job_id, path.name)
+        }, headers=auth_header, timeout=60), "Facebook video publish").json()
+        vid = str(r.get("id") or "")
+        return vid, f"https://www.facebook.com/{vid}"
+    with open(path, "rb") as f:
+        r = _check(httpx.post(f"{FB}/{uid}/videos", data={
+            "description": caption
+        }, files={"source": (path.name, f, "video/mp4")}, headers=auth_header, timeout=120), "Facebook video upload").json()
+        vid = str(r.get("id") or "")
+        return vid, f"https://www.facebook.com/{vid}"
+
+
+def facebook_views(acc, vid: str):
+    token = _fb_token(acc)
+    try:
+        r = httpx.get(f"{FB}/{vid}", params={"fields": "views"}, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+        if r.status_code == 200:
+            return int(r.json().get("views", 0))
+    except Exception:
+        pass
+    return None
+

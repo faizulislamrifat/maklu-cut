@@ -123,6 +123,8 @@ def _post(p):
             rid, url = accounts.instagram_upload(acc, path, f"{title}\n\n{cap}", job["id"])
         elif acc["platform"] == "tiktok":
             rid, url = accounts.tiktok_upload(acc, path, f"{title}\n\n{cap}", creator["privacy"])
+        elif acc["platform"] == "facebook":
+            rid, url = accounts.facebook_upload(acc, path, f"{title}\n\n{cap}", job["id"])
         else:
             raise RuntimeError("That kind of account is no longer supported.")
         p.update(status="posted", posted_at=time.time(), remote_id=rid, url=url, error=None)
@@ -167,9 +169,9 @@ def _stats_for(recent):
                 if p["account"] == aid and p["remote_id"] in views:
                     p["views"] = views[p["remote_id"]]
     for p in recent:
-        acc = accounts.get(p["account"]) if p["platform"] == "instagram" else None
+        acc = accounts.get(p["account"]) if p["platform"] in ("instagram", "facebook") else None
         if acc:
-            v = accounts.instagram_views(acc, p["remote_id"])
+            v = accounts.instagram_views(acc, p["remote_id"]) if p["platform"] == "instagram" else accounts.facebook_views(acc, p["remote_id"])
             if v is not None:
                 p["views"] = v
 

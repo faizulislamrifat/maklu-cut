@@ -18,10 +18,23 @@ STYLES = {
              "strong": "00D7FF", "outline": 7, "pop": 114, "upper": True, "per": 2},
     "clean": {"label": "Clean", "font": "Poppins ExtraBold", "size": 100, "base": "FFFFFF", "active": "6BD7FF",
               "strong": "FFFFFF", "outline": 5, "pop": 106, "upper": False, "per": 4},
+    "siliguri": {"label": "Hind Siliguri (বাংলা)", "font": "Hind Siliguri", "size": 128, "base": "FFFFFF", "active": "00F0FF",
+                 "strong": "FFFFFF", "outline": 7, "pop": 110, "upper": False, "per": 3},
+    "kalpurush": {"label": "Kalpurush (কালপুরুষ)", "font": "Kalpurush", "size": 128, "base": "FFFFFF", "active": "3C3CFF",
+                  "strong": "00D7FF", "outline": 7, "pop": 110, "upper": False, "per": 3},
+    "maklu": {"label": "MAKLU (Orange)", "font": "Hind Siliguri", "size": 132, "base": "FFFFFF", "active": "3062FE",
+              "strong": "3062FE", "outline": 7, "pop": 114, "upper": False, "per": 3},
 }
 HOOK = {"font": "Poppins ExtraBold", "size": 96, "ink": "14100E", "box": "FFFFFF", "pad_x": 36, "pad_y": 22, "radius": 26,
         "max_w": 900}
-FONT_FILES = {"Poppins ExtraBold": "Poppins-ExtraBold.ttf", "Anton": "Anton-Regular.ttf", "Archivo Black": "ArchivoBlack-Regular.ttf"}
+FONT_FILES = {
+    "Poppins ExtraBold": "Poppins-ExtraBold.ttf",
+    "Anton": "Anton-Regular.ttf",
+    "Archivo Black": "ArchivoBlack-Regular.ttf",
+    "Hind Siliguri": "HindSiliguri-Bold.ttf",
+    "Kalpurush": "Kalpurush.ttf",
+    "Noto Sans Bengali": "NotoSansBengali.ttf",
+}
 CAP_MAX_W = 960   # captions never run wider than this, whatever is said
 
 
@@ -78,7 +91,41 @@ def install_fonts():
             shutil.copyfile(f, config.FONTS_DIR / f.name)
 
 
-LAYOUTS = {"blur": "Full frame + blurred fill", "zoom": "Zoomed in + blurred fill", "crop": "Fill the screen (centre crop)"}
+LAYOUTS = {
+    "blur": "9:16 Full frame + blurred fill",
+    "zoom": "9:16 Zoomed in + blurred fill",
+    "crop": "9:16 Fill the screen (centre crop)",
+    "square": "1:1 Square (Feed & Posts)",
+    "wide": "16:9 Landscape (Widescreen)",
+}
+
+
+def get_dimensions(layout: str) -> tuple[int, int]:
+    """Frame width and height for this layout: 9:16 (1080x1920), 1:1 (1080x1080) or 16:9 (1920x1080)."""
+    if layout == "square":
+        return 1080, 1080
+    if layout == "wide":
+        return 1920, 1080
+    return config.OUT_W, config.OUT_H
+
+
+BENGALI_RE = re.compile(r"[\u0980-\u09FF]")
+
+
+def is_bengali(text: str) -> bool:
+    """True if the text contains any Bengali Unicode characters."""
+    return bool(BENGALI_RE.search(str(text or "")))
+
+
+def _to_ass_bgr(color: str) -> str:
+    """Converts hex #RRGGBB (or ASS BGR) to 6-char ASS BGR."""
+    if not color:
+        return ""
+    c = str(color).strip().lstrip("#").lstrip("&H").rstrip("&")
+    if len(c) == 6:
+        # Standard web hex #RRGGBB -> BBGGRR
+        return f"{c[4:6]}{c[2:4]}{c[0:2]}".upper()
+    return c.upper()
 
 
 def _ts(t):
@@ -109,7 +156,21 @@ def _groups(words, per):
 
 
 def geometry(src_w, src_h, layout):
-    """Where the video sits in the 1080x1920 frame, and where hook and captions go."""
+    """Where the video sits in the frame, and where hook and captions go."""
+    w, h = get_dimensions(layout)
+    if layout == "square":
+        if src_w == src_h:
+            fg_h = h
+        elif src_w > src_h:
+            fg_h = min(h, int(round(w * src_h / src_w / 2)) * 2)
+        else:
+            fg_h = h
+        top = (h - fg_h) // 2
+        return layout, fg_h, max(120, top - 80), min(h - 100, top + fg_h + 90)
+    if layout == "wide":
+        fg_h = h
+        top = (h - fg_h) // 2
+        return layout, fg_h, 150, 920
     if src_h >= src_w and layout != "crop":
         layout = "crop"  # already vertical or square: nothing to gain from a blurred fill
     if layout == "blur":
@@ -124,23 +185,27 @@ def geometry(src_w, src_h, layout):
     return layout, fg_h, max(230, top - 190), min(1640, top + fg_h + 180)
 
 
-def _hook_events(hook, dur, y):
+def _hook_events(hook, dur, y, out_w=None):
     """The heading: dark text in a white rounded box that fits it, on one line or two balanced ones."""
-    f, size = _Font.get(HOOK["font"]), HOOK["size"]
+    if out_w is None:
+        out_w = W
+    hook_font = "Hind Siliguri" if is_bengali(hook) else HOOK["font"]
+    f, size = _Font.get(hook_font), HOOK["size"]
     words = hook.split()
     if not words:
         return []
     lines = [" ".join(words)]
-    if f.width(lines[0], size) > HOOK["max_w"] and len(words) > 1:      # two lines, split where they come out most even
+    max_w = min(HOOK["max_w"], int(out_w * 0.84))
+    if f.width(lines[0], size) > max_w and len(words) > 1:      # two lines, split where they come out most even
         cut = min(range(1, len(words)), key=lambda i: max(f.width(" ".join(words[:i]), size), f.width(" ".join(words[i:]), size)))
         lines = [" ".join(words[:cut]), " ".join(words[cut:])]
     widest = max(f.width(l, size) for l in lines)
-    if widest > HOOK["max_w"]:
-        size = max(40, int(size * HOOK["max_w"] / widest))
+    if widest > max_w:
+        size = max(40, int(size * max_w / widest))
         widest = max(f.width(l, size) for l in lines)
     line_h = f.em(size) * 1.16
     bw, bh = widest + 2 * HOOK["pad_x"], line_h * len(lines) + 2 * HOOK["pad_y"]
-    x0, y0, r = (W - bw) / 2, y - bh / 2, min(HOOK["radius"], bh / 2)
+    x0, y0, r = (out_w - bw) / 2, y - bh / 2, min(HOOK["radius"], bh / 2)
     x1, y1 = x0 + bw, y0 + bh
     n = lambda v: f"{v:.0f}"                                                         # noqa: E731
     box = (f"m {n(x0 + r)} {n(y0)} l {n(x1 - r)} {n(y0)} b {n(x1)} {n(y0)} {n(x1)} {n(y0)} {n(x1)} {n(y0 + r)} "
@@ -151,37 +216,76 @@ def _hook_events(hook, dur, y):
     ev = [f"Dialogue: 3,{span},Hook,,0,0,0,,{{\\an7\\pos(0,0)\\fad(160,0)\\c&H{HOOK['box']}&\\p1}}{box}{{\\p0}}"]
     for i, line in enumerate(lines):
         cy = y - line_h * (len(lines) - 1) / 2 + i * line_h - f.cap_shift(size)
-        ev.append(f"Dialogue: 4,{span},Hook,,0,0,0,,{{\\an5\\pos({W // 2},{cy:.0f})\\fad(160,0)\\fs{size}}}{line}")
+        ev.append(f"Dialogue: 4,{span},Hook,,0,0,0,,{{\\an5\\pos({out_w // 2},{cy:.0f})\\fad(160,0)\\fn{hook_font}\\fs{size}}}{line}")
     return ev
 
 
-def build_ass(words, start, end, hook, style_name, highlight, hook_y, cap_y) -> str:
-    st = STYLES.get(style_name, STYLES["bounce"])
+def build_ass(words, start, end, hook, style_name, highlight, hook_y, cap_y,
+              out_w=None, out_h=None, position=None, color=None, size=None, animation=None) -> str:
+    out_w = out_w or W
+    out_h = out_h or H
+    st = dict(STYLES.get(style_name, STYLES["bounce"]))
+
+    # Position override
+    if position == "top":
+        cap_y = int(out_h * 0.22)
+    elif position in ("middle", "center", "mid"):
+        cap_y = int(out_h * 0.50)
+    elif position == "bottom":
+        pass
+    elif isinstance(position, (int, float)):
+        cap_y = int(position)
+
+    # Check for Bengali in hook or words
+    has_bn = is_bengali(hook) or any(is_bengali(w.get("w", "")) for w in words)
+    if has_bn and st["font"] not in ("Hind Siliguri", "Kalpurush", "Noto Sans Bengali"):
+        st["font"] = "Hind Siliguri"
+        st["upper"] = False
+
+    # Color override
+    if color:
+        st["active"] = _to_ass_bgr(color)
+
+    # Size override
+    if size:
+        try:
+            st["size"] = max(40, min(240, int(size)))
+        except (ValueError, TypeError):
+            pass
+
+    # Animation override
+    if animation in ("none", "static"):
+        st["pop"] = 100
+    elif animation in ("high", "jump", "bounce_high"):
+        st["pop"] = 125
+
     words = [dict(w, s=w["s"] - CAPTION_LEAD, e=w["e"] - CAPTION_LEAD) for w in words]
     strong = {_key(h) for h in highlight if _key(h)}
+    hook_font = "Hind Siliguri" if is_bengali(hook) else HOOK["font"]
     head = f"""[Script Info]
 ScriptType: v4.00+
-PlayResX: {W}
-PlayResY: {H}
+PlayResX: {out_w}
+PlayResY: {out_h}
 WrapStyle: 2
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Cap,{st['font']},{st['size']},&H00{st['base']},&H00{st['base']},&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,{st['outline']},0,5,0,0,0,1
-Style: Hook,{HOOK['font']},{HOOK['size']},&H00{HOOK['ink']},&H00{HOOK['ink']},&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
+Style: Hook,{hook_font},{HOOK['size']},&H00{HOOK['ink']},&H00{HOOK['ink']},&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     dur = end - start
-    ev = _hook_events(_clean(hook), dur, hook_y)
+    ev = _hook_events(_clean(hook), dur, hook_y, out_w=out_w)
     f = _Font.get(st["font"])
     inside = [dict(w, w=_clean(w["w"])) for w in words if w["s"] >= start - 0.05 and w["s"] < end]
     inside = sorted((w for w in inside if w["w"]), key=lambda w: w["s"])
     for i, w in enumerate(inside[:-1]):
         w["e"] = max(w["s"], min(w["e"], inside[i + 1]["s"]))
     groups = _groups(inside, st["per"])
+    cap_max_w = min(CAP_MAX_W, int(out_w * 0.88))
     for gi, g in enumerate(groups):
         g_start = max(0.0, g[0]["s"] - start)
         g_end = min(g[-1]["e"] + 0.25, groups[gi + 1][0]["s"] if gi + 1 < len(groups) else end) - start
@@ -191,50 +295,63 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         for x in g:
             t = re.sub(r"[.,;:]+$", "", x["w"])
             texts.append(t.upper() if st["upper"] else t)
-        if not all(roman.drawable(t) for t in texts):
+
+        # Check if the chosen font can draw these texts
+        font_can_draw = True
+        if any(is_bengali(t) for t in texts):
+            font_can_draw = (st["font"] in ("Hind Siliguri", "Kalpurush", "Noto Sans Bengali"))
+        elif not all(roman.drawable(t) for t in texts):
+            font_can_draw = False
+
+        if not font_can_draw:
             # A script the caption font cannot draw (Japanese, Thai, Chinese...): its words cannot be measured, so
             # they are not placed one by one. The line is drawn whole and centred, in a font the system has for it.
             line = " ".join(texts)
             fs = max(44, min(int(st["size"] * 0.7), int(1500 / max(1, len(line)) * 1.6)))
-            ev.append(f"Dialogue: 1,{_ts(g_start)},{_ts(g_end)},Cap,,60,60,0,,{{\\an5\\pos({W // 2},{cap_y:.0f})\\q0\\fs{fs}}}{line}")
+            ev.append(f"Dialogue: 1,{_ts(g_start)},{_ts(g_end)},Cap,,60,60,0,,{{\\an5\\pos({out_w // 2},{cap_y:.0f})\\q0\\fs{fs}}}{line}")
             continue
         size = st["size"]
         gap = f.width("n n", size) - 2 * f.width("n", size) + (2 * st["outline"] + 6) * size / st["size"]   # a space, plus room for both outlines
         total = sum(f.width(t, size) for t in texts) + gap * (len(texts) - 1)
-        if total > CAP_MAX_W:                                  # a long phrase: shrink it to fit, never run off the frame
-            size = max(36, int(size * CAP_MAX_W / total))
+        if total > cap_max_w:                                  # a long phrase: shrink it to fit, never run off the frame
+            size = max(36, int(size * cap_max_w / total))
             gap = f.width("n n", size) - 2 * f.width("n", size) + (2 * st["outline"] + 6) * size / st["size"]   # a space, plus room for both outlines
             total = sum(f.width(t, size) for t in texts) + gap * (len(texts) - 1)
         cy = cap_y - f.cap_shift(size)
-        x = (W - total) / 2
-        p = st["pop"]
+        x = (out_w - total) / 2
         for i, (w, t) in enumerate(zip(g, texts)):
             wd = f.width(t, size)
-            p = max(104, min(st["pop"], 100 + int(2200 / max(wd, 1))))   # long words grow less, so they never touch their neighbours
             pos = f"\\an5\\pos({x + wd / 2:.0f},{cy:.0f})\\fs{size}"
             x += wd + gap
             a = max(g_start, w["s"] - start)
             b = (g[i + 1]["s"] - start) if i + 1 < len(g) else g_end
             base = st["strong"] if _key(w["w"]) in strong else st["base"]
+            p = max(104, min(st["pop"], 100 + int(2200 / max(wd, 1)))) if st["pop"] > 100 else 100
             if a - g_start >= 0.02:                                                   # waiting to be said
                 ev.append(f"Dialogue: 1,{_ts(g_start)},{_ts(a)},Cap,,0,0,0,,{{{pos}\\c&H{base}&}}{t}")
             if b - a >= 0.02:                                                         # being said: colour and a quick pop, in front
-                ev.append(f"Dialogue: 2,{_ts(a)},{_ts(b)},Cap,,0,0,0,,{{{pos}\\c&H{st['active']}&\\fscx94\\fscy94"
-                          f"\\t(0,90,\\fscx{p}\\fscy{p})\\t(90,200,\\fscx{p - 5}\\fscy{p - 5})}}{t}")
+                anim = (f"\\fscx94\\fscy94\\t(0,90,\\fscx{p}\\fscy{p})\\t(90,200,\\fscx{p - 5}\\fscy{p - 5})"
+                        if p > 100 else "")
+                ev.append(f"Dialogue: 2,{_ts(a)},{_ts(b)},Cap,,0,0,0,,{{{pos}\\c&H{st['active']}&{anim}}}{t}")
             if g_end - b >= 0.02:                                                     # said
-                ev.append(f"Dialogue: 1,{_ts(b)},{_ts(g_end)},Cap,,0,0,0,,{{{pos}\\c&H{base}&\\fscx{p - 5}\\fscy{p - 5}"
-                          f"\\t(0,90,\\fscx100\\fscy100)}}{t}")
+                anim = (f"\\fscx{p - 5}\\fscy{p - 5}\\t(0,90,\\fscx100\\fscy100)"
+                        if p > 100 else "")
+                ev.append(f"Dialogue: 1,{_ts(b)},{_ts(g_end)},Cap,,0,0,0,,{{{pos}\\c&H{base}&{anim}}}{t}")
     return head + "\n".join(ev) + "\n"
 
 
-def _filter(layout, fg_h):
+def _filter(layout, fg_h, w=None, h=None):
+    if w is None or h is None:
+        w, h = W, H
     if layout == "crop":
-        return f"[0:v]fps={config.OUT_FPS},scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1[v0];"
+        return f"[0:v]fps={config.OUT_FPS},scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1[v0];"
+    bg_w = 480 if w > h else (360 if w == h else 270)
+    bg_h = int(bg_w * h / w)
     return (f"[0:v]fps={config.OUT_FPS},split=2[a][b];"
-            f"[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:2,"
-            f"scale={W}:{H},eq=brightness=-0.14:saturation=1.15[bg];"
-            f"[b]scale={W}:{fg_h}:force_original_aspect_ratio=increase,crop={W}:{fg_h}[fg];"
-            f"[bg][fg]overlay=0:(H-h)/2,setsar=1[v0];")
+            f"[a]scale={bg_w}:{bg_h}:force_original_aspect_ratio=increase,crop={bg_w}:{bg_h},boxblur=6:2,"
+            f"scale={w}:{h},eq=brightness=-0.14:saturation=1.15[bg];"
+            f"[b]scale={w}:{fg_h}:force_original_aspect_ratio=increase,crop={w}:{fg_h}[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[v0];")
 
 
 _qsv_ok = None
@@ -245,27 +362,36 @@ def render_clip(src: Path, out_dir: Path, name: str, clip: dict, words: list, sr
     """Writes <name>.mp4, <name>.jpg and <name>.ass into out_dir. Returns file names."""
     out_dir.mkdir(parents=True, exist_ok=True)
     start, end = clip["start"], clip["end"]
-    layout, fg_h, hook_y, cap_y = geometry(src_w, src_h, clip.get("layout", "blur"))
+    layout_name = clip.get("layout", "blur")
+    out_w, out_h = get_dimensions(layout_name)
+    layout, fg_h, hook_y, cap_y = geometry(src_w, src_h, layout_name)
     ass = build_ass(words if clip.get("captions", True) else [], start, end, clip.get("hook", ""), clip.get("style", "bounce"),
-                    clip.get("highlight_words", []), hook_y, cap_y)
+                    clip.get("highlight_words", []), hook_y, cap_y,
+                    out_w=out_w, out_h=out_h,
+                    position=clip.get("caption_pos"),
+                    color=clip.get("caption_color"),
+                    size=clip.get("caption_size"),
+                    animation=clip.get("caption_animation"))
     # The clip is made in a short work folder and moved into place afterwards. The caption step of ffmpeg cannot
     # open files whose full path is longer than 260 characters on Windows, which a data folder deep inside other
     # folders easily reaches. Inside the work folder every name is short and relative (a drive colon would also
     # break the filter syntax).
     work = Path(tempfile.mkdtemp(prefix="pk"))
     try:
-        return _render_in(work, src, out_dir, name, start, end, layout, fg_h, ass)
+        return _render_in(work, src, out_dir, name, start, end, layout, fg_h, ass, out_w=out_w, out_h=out_h)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layout, fg_h, ass: str) -> dict:
+def _render_in(work: Path, src: Path, out_dir: Path, name: str, start, end, layout, fg_h, ass: str, out_w=None, out_h=None) -> dict:
     global _qsv_ok
+    if out_w is None or out_h is None:
+        out_w, out_h = W, H
     (work / f"{name}.ass").write_text(ass, encoding="utf-8")
     (work / "f").mkdir()
     for f in config.FONTS_DIR.glob("*.ttf"):
         shutil.copyfile(f, work / "f" / f.name)
-    fc = _filter(layout, fg_h) + f"[v0]ass={name}.ass:fontsdir=f[v]"
+    fc = _filter(layout, fg_h, w=out_w, h=out_h) + f"[v0]ass={name}.ass:fontsdir=f[v]"
     base = ["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.2f}", "-t", f"{end - start:.2f}", "-i", str(src),
             "-filter_complex", fc, "-map", "[v]", "-map", "0:a:0", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", "-pix_fmt"]

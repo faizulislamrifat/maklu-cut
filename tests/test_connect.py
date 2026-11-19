@@ -32,7 +32,7 @@ user, b = person("user@example.com")
 
 # ---- nothing is set up: the buttons say so, and only an admin may set it up
 st = b.get("/api/status").json()
-check("nothing can be connected before setup", st["connect"], {"youtube": False, "instagram": False, "tiktok": False})
+check("nothing can be connected before setup", st["connect"], {"youtube": False, "instagram": False, "tiktok": False, "facebook": False})
 check("a normal user cannot see the setup", b.get("/api/apps").status_code, 404)
 check("...or change it", b.put("/api/apps", json={"platform": "tiktok", "client_id": "abcd", "client_secret": "x"}, headers=ORIGIN).status_code, 404)
 r = b.get("/oauth/instagram/start")
@@ -40,7 +40,7 @@ check("Connect before setup comes back with a reason", (r.status_code, "connect_
 check("setup from another website is refused", a.put("/api/apps", json={"platform": "tiktok", "client_id": "abcd1234", "client_secret": "s"},
                                                     headers={"Origin": "https://evil.example"}).status_code, 403)
 check("a bad id is refused", a.put("/api/apps", json={"platform": "tiktok", "client_id": "a b<", "client_secret": "s"}, headers=ORIGIN).status_code, 400)
-for pf, cid in (("youtube", "g-client-123.apps"), ("instagram", "1234567890"), ("tiktok", "awtiktokkey123")):
+for pf, cid in (("youtube", "g-client-123.apps"), ("instagram", "1234567890"), ("tiktok", "awtiktokkey123"), ("facebook", "9876543210")):
     r = a.put("/api/apps", json={"platform": pf, "client_id": cid, "client_secret": f"{pf}-secret-value"}, headers=ORIGIN)
     check(f"{pf} app saved", (r.status_code, r.json()[pf]["ready"]), (200, True))
 apps = a.get("/api/apps").json()
@@ -48,7 +48,7 @@ check("secrets are never sent back", any("secret-value" in json.dumps(v) for v i
 check("each platform shows the address to register", apps["tiktok"]["redirect"], BASE + "/oauth/tiktok/callback")
 r = a.put("/api/apps", json={"platform": "tiktok", "client_id": "", "client_secret": "tiktok-secret-value2"}, headers=ORIGIN)
 check("a new secret alone keeps the saved id", accounts.app_keys("tiktok"), ("awtiktokkey123", "tiktok-secret-value2"))
-check("everyone can connect now", b.get("/api/status").json()["connect"], {"youtube": True, "instagram": True, "tiktok": True})
+check("everyone can connect now", b.get("/api/status").json()["connect"], {"youtube": True, "instagram": True, "tiktok": True, "facebook": True})
 
 # ---- the platforms, as stand-ins
 class R:
@@ -90,6 +90,8 @@ def post(url, data=None, json=None, headers=None, params=None, timeout=None, con
         return R(200, {"id": "container1"})
     if url.endswith("/17841/media_publish"):
         return R(200, {"id": "media1"})
+    if "graph.facebook.com" in url and url.endswith("/videos"):
+        return R(200, {"id": "fb_vid_1"})
     return R(404, {})
 def get(url, params=None, headers=None, timeout=None):
     calls.append(("GET", url, params, headers or {}))
@@ -99,6 +101,12 @@ def get(url, params=None, headers=None, timeout=None):
         return R(200, {"access_token": "ig-long", "token_type": "bearer", "expires_in": 5183944})
     if url == "https://graph.instagram.com/me":
         return R(200, {"user_id": "17841", "username": "clipper", "account_type": "MEDIA_CREATOR"})
+    if "graph.facebook.com" in url and "/oauth/access_token" in url:
+        return R(200, {"access_token": "fb-token", "token_type": "bearer"})
+    if "graph.facebook.com" in url and url.endswith("/me/accounts"):
+        return R(200, {"data": [{"id": "page123", "name": "My Facebook Page", "access_token": "fb-page-token", "category": "Creator"}]})
+    if "graph.facebook.com" in url and url.endswith("/me"):
+        return R(200, {"id": "user123", "name": "My Facebook Profile"})
     if url.endswith("/container1"):
         return R(200, {"status_code": "FINISHED"})
     if url.endswith("/media1"):
@@ -129,9 +137,13 @@ loc, back = connect(b, "tiktok")
 q = parse_qs(loc.query)
 check("TikTok: TikTok's own page, asking to post", (loc.netloc, q["client_key"][0], q["scope"][0]), ("www.tiktok.com", "awtiktokkey123", "user.info.basic,video.publish"))
 check("TikTok: connected", "connected=tiktok" in back.headers["location"])
+loc, back = connect(b, "facebook")
+q = parse_qs(loc.query)
+check("Facebook: Facebook's own page, asking to post", (loc.netloc, q["client_id"][0], "publish_video" in q["scope"][0]), ("www.facebook.com", "9876543210", True))
+check("Facebook: connected", "connected=facebook" in back.headers["location"])
 accs = {x["platform"]: x for x in b.get("/api/accounts").json()}
-check("all three accounts are listed with their names", (accs["youtube"]["name"], accs["instagram"]["name"], accs["tiktok"]["name"]),
-      ("My Channel", "@clipper", "@streamerclips"))
+check("all four accounts are listed with their names", (accs["youtube"]["name"], accs["instagram"]["name"], accs["tiktok"]["name"], accs["facebook"]["name"]),
+      ("My Channel", "@clipper", "@streamerclips", "My Facebook Page"))
 check("tokens never reach the page", any(t in b.get("/api/accounts").text for t in ("ig-long", "tt-access", "yt-refresh")), False)
 check("someone else's accounts are not mine", a.get("/api/accounts").json(), [])
 r = b.get("/oauth/tiktok/callback", params={"code": "x", "state": "made-up"})
@@ -186,6 +198,10 @@ with ctx.as_user(user.id):
     acc = accounts.get(ttacc["id"]); acc["expires"] = 0; accounts._put(acc)
     accounts._tt_token(accounts.get(ttacc["id"]))
     check("TikTok: an old sign-in is renewed, and the new refresh token kept", accounts.get(ttacc["id"])["refresh_token"], "tt-refresh-2")
+
+    fbacc = accounts.get(accs["facebook"]["id"])
+    rid, url = accounts.facebook_upload(fbacc, jd / "clip01.mp4", "My caption", "job-12345678")
+    check("Facebook: published with link", (rid, url), ("fb_vid_1", "https://www.facebook.com/fb_vid_1"))
 
 print("ALL PASSED" if not fails else f"{len(fails)} failed")
 import shutil; db.engine.dispose(); shutil.rmtree(os.environ["PEAKCUT_DATA"], ignore_errors=True)

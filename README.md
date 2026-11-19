@@ -1,61 +1,38 @@
-# PeakCut
+# MAKLU CUT
 
-Turn long videos and live streams into captioned vertical clips, ready to post. Free and open source: run it on
-your own computer or server, with your own AI key.
+Turn long videos, podcasts, and live streams into viral captioned clips ready to post on YouTube Shorts, Instagram Reels, TikTok, and Facebook. Free and open source: run it on your own computer or server, with your own AI key.
 
-Paste a YouTube, Twitch or Kick link (or upload a file) and PeakCut finds the moments worth clipping, cuts them to
-9:16, adds word-by-word captions and a hook, and can post them to your connected accounts. It can also record a
-creator's live stream and clip the highlights while the stream is still running.
+Created by **[Faizul Islam Rifat](https://github.com/faizulislamrifat)** · [Instagram](https://www.instagram.com/iamfaizulislamrifat/)
 
-## What it does
+Paste a YouTube, Twitch or Kick link (or upload a video file) and MAKLU CUT automatically finds the moments worth clipping, formats them into **9:16 (Shorts/Reels)**, **1:1 (Square)**, or **16:9 (Landscape)**, adds animated word-by-word captions with custom fonts, and can auto-post them directly to your connected social channels.
 
-- **Clips from any video.** Transcribes the audio, asks an AI which moments would hold a stranger's attention, and
-  renders each one with captions in one of three styles.
-- **Live clipping.** Records a stream into a rolling buffer and clips as it happens, using loudness, chat activity
-  and the transcript.
-- **Workspaces per creator.** Channels, clip settings, posting rules and an activity log for each creator you clip.
-- **Posting.** Connect YouTube, Instagram and TikTok in one click, then queue or auto-post finished clips, with
-  spacing and daily caps (see [DEPLOY.md](DEPLOY.md#connecting-youtube-instagram-and-tiktok) for the one-time setup).
-- **No sign-in on your own computer.** It opens straight into the dashboard. On a shared server, switch accounts on
-  (`PEAKCUT_ACCOUNTS=1`) for email or Google sign-in and an admin dashboard.
-- **Your own AI.** Gemini, OpenAI, Grok, Groq, OpenRouter, Claude, a local model through Ollama, or anything that
-  speaks the OpenAI chat format. No key at all also works: clips are then picked by loudness.
+## Key Features
+
+- **AI-Powered Clip Scout**: Transcribes the audio, analyzes conversational peaks, emotional moments, and laughter, then selects high-engagement standalone clips.
+- **Bengali & Multilingual Support**: Custom Bengali typography (`Hind Siliguri`, `Kalpurush`, `Noto Sans Bengali`) with accurate conjunct letter rendering, Bengali hook generation, and Whisper punctuation formatting.
+- **Multiple Video Formats**: Supports **9:16 Vertical** (Shorts/Reels/TikTok), **1:1 Square** (Instagram/Facebook Feed), and **16:9 Landscape** (YouTube Widescreen).
+- **Customizable Captions**: Word-by-word bouncy pop animation, custom highlight color picker, adjustable font sizes, and on-screen positioning (Top, Middle, Bottom).
+- **Social Media Auto-Posting**: Connect YouTube Shorts, Instagram Reels, TikTok, and Facebook Video/Reels in one click; post now or add to queue.
+- **Live Stream Clipping**: Records a live stream into a rolling buffer and clips viral highlights in real time while the stream is ongoing.
+- **Creator Workspaces**: Multi-creator management with dedicated channels, clip presets, and scheduling rules.
+- **Single-User or Multi-User Mode**: Opens straight into the dashboard on your computer with zero login hassle, or enable multi-user accounts (`PEAKCUT_ACCOUNTS=1`) for team/server deployment.
+- **Bring Your Own AI**: Connect Google Gemini, OpenAI, Groq, Anthropic Claude, xAI Grok, OpenRouter, or run 100% offline local models via Ollama. No key also works via audio loudness detection!
 
 ## Quick start
 
-You need Python 3.10 or newer and `ffmpeg`. On Windows: `winget install Gyan.FFmpeg`. On a Mac: `brew install ffmpeg`.
-On Linux: `sudo apt install ffmpeg`. PeakCut finds it by itself and tells you in the dashboard if it is missing.
+You need Python 3.10 or newer and `ffmpeg`.
+- **Windows**: `winget install Gyan.FFmpeg`
+- **macOS**: `brew install ffmpeg`
+- **Linux**: `sudo apt install ffmpeg`
 
-Put PeakCut in a short folder that stays put: `C:\peakcut` on Windows, `~/peakcut` on a Mac or Linux. Not inside a
-temporary folder or an AI assistant's workspace: those get cleaned up, and on Windows a folder that deep stops the
-speech model from loading (Windows can't open files whose full path is over 260 characters). If an AI assistant
-installs it for you, it should ask you where to put it first ([AGENTS.md](AGENTS.md) tells it to).
-
-On Windows:
+Clone the repository into a permanent folder:
 
 ```bash
-git clone <this repository> C:\peakcut
-```
-
-```bash
-cd C:\peakcut
-```
-
-On a Mac or Linux:
-
-```bash
-git clone <this repository> ~/peakcut
-```
-
-```bash
-cd ~/peakcut
-```
-
-```bash
+git clone https://github.com/faizulislamrifat/maklu-cut.git C:\maklu-cut
+cd C:\maklu-cut
 pip install -r requirements.txt
+python -m studio.server
 ```
-
-Start the server:
 
 ```bash
 python -m studio.server
