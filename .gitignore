@@ -20,7 +20,6 @@ storage.json
 CLAUDE.local.md
 .vscode/
 .idea/
-*.bat
 Thumbs.db
 .DS_Store
 
