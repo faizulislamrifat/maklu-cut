@@ -1,0 +1,1002 @@
+package com.example.maklucut.ui.main
+
+import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.example.maklucut.data.Clip
+import com.example.maklucut.data.GeminiScout
+import com.example.maklucut.data.VideoInfo
+import com.example.maklucut.data.YouTubeHelper
+import kotlinx.coroutines.launch
+
+enum class AppScreen {
+    HOME,
+    CLIP_DETAIL,
+    SETTINGS
+}
+
+// -------------------------------------------------------------
+// TOP BRAND BAR
+// -------------------------------------------------------------
+@Composable
+fun TopBar(
+    title: String? = null,
+    onBack: (() -> Unit)? = null,
+    onSettingsClick: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(60.dp)
+            .background(Color(0xFF1E1E22))
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Text("←", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+            Text(
+                text = "MAKLU",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Black,
+                color = Color(0xFFFE6230),
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "CUT",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Black,
+                color = Color.White,
+                letterSpacing = 1.sp
+            )
+            if (title != null) {
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "• $title",
+                    fontSize = 14.sp,
+                    color = Color(0xFF9E9EA4),
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        if (onSettingsClick != null) {
+            IconButton(
+                onClick = onSettingsClick,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF2A2A30))
+            ) {
+                Text("⚙", color = Color.White, fontSize = 18.sp)
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 1. HOME SCREEN
+// -------------------------------------------------------------
+@Composable
+fun HomeScreen(
+    apiKey: String,
+    modelName: String,
+    onOpenClip: (VideoInfo, Clip) -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val clipboard = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
+
+    var inputUrl by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var statusText by remember { mutableStateOf("") }
+    var activeVideo by remember { mutableStateOf<VideoInfo?>(null) }
+    var clips by remember { mutableStateOf<List<Clip>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    fun doScout() {
+        if (inputUrl.isBlank()) {
+            Toast.makeText(context, "অনুগ্রহ করে একটি ইউটিউব লিংক দিন", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val videoId = YouTubeHelper.extractVideoId(inputUrl)
+        if (videoId == null) {
+            Toast.makeText(context, "সঠিক ইউটিউব লিংক পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        scope.launch {
+            isLoading = true
+            errorMessage = null
+            statusText = "ভিডিওর তথ্য ও সাবটাইটেল সংগ্রহ করা হচ্ছে..."
+            try {
+                val video = YouTubeHelper.fetchVideoDetails(videoId)
+                activeVideo = video
+
+                statusText = "Gemini AI দিয়ে ভাইরাল মোমেন্ট বিশ্লেষণ করা হচ্ছে..."
+                val foundClips = GeminiScout.scoutClips(
+                    video = video,
+                    apiKey = apiKey,
+                    modelName = modelName
+                )
+                clips = foundClips
+                statusText = ""
+                Toast.makeText(context, "${foundClips.size}টি ভাইরাল ক্লিপ পাওয়া গেছে!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                errorMessage = e.localizedMessage ?: "সমস্যা হয়েছে। ইন্টারনেট ও এপিআই কী চেক করুন।"
+                statusText = ""
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF141416))
+    ) {
+        TopBar(onSettingsClick = onOpenSettings)
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Hero Banner
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "📱 Standalone Phone Mode",
+                                color = Color(0xFF4CAF50),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "• No PC needed",
+                                color = Color(0xFF8E8E93),
+                                fontSize = 12.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "ইউটিউব ভিডিও থেকে ভাইরাল রিলস ও শর্টস তৈরি করুন",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "সম্পূর্ণ মোবাইলেই সরাসরি রান হয়। কম্পিউটার বা সার্ভার ছাড়াই AI ভাইরাল ক্লিপ ও বাংলা সাবটাইটেল বের করে দেয়।",
+                            fontSize = 13.sp,
+                            color = Color(0xFFA0A0A8),
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
+
+            // Input Form Card
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "ভিডিও লিংক পেস্ট করুন",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = inputUrl,
+                            onValueChange = { inputUrl = it },
+                            placeholder = { Text("https://www.youtube.com/watch?v=...", color = Color(0xFF6B6B75), fontSize = 13.sp) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFFFE6230),
+                                unfocusedBorderColor = Color(0xFF33333C),
+                                focusedContainerColor = Color(0xFF141416),
+                                unfocusedContainerColor = Color(0xFF141416)
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    val clip = clipboard.primaryClip
+                                    if (clip != null && clip.itemCount > 0) {
+                                        inputUrl = clip.getItemAt(0).text?.toString() ?: ""
+                                        Toast.makeText(context, "লিংক পেস্ট করা হয়েছে", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "ক্লিপবোর্ডে কিছু নেই", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                            ) {
+                                Text("📋 Paste")
+                            }
+
+                            if (inputUrl.isNotBlank()) {
+                                OutlinedButton(
+                                    onClick = { inputUrl = "" },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE53935))
+                                ) {
+                                    Text("✕ Clear")
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Button(
+                            onClick = { doScout() },
+                            enabled = !isLoading,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFFE6230),
+                                disabledContainerColor = Color(0xFF553322)
+                            )
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "খোঁজা হচ্ছে...",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            } else {
+                                Text(
+                                    text = "✨ ভাইরাল ক্লিপ বের করুন",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            }
+                        }
+
+                        if (statusText.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "⏳ $statusText",
+                                color = Color(0xFFFFB74D),
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        if (errorMessage != null) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0x33E53935))
+                            ) {
+                                Text(
+                                    text = "⚠️ $errorMessage",
+                                    color = Color(0xFFFF8A80),
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Active Video Info Card
+            if (activeVideo != null) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "ভিডিও বিশ্লেষণ সম্পন্ন:",
+                                color = Color(0xFF9E9EA4),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = activeVideo!!.title,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "চ্যানেল: ${activeVideo!!.channel}",
+                                color = Color(0xFFFE6230),
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Found Clips
+            if (clips.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "🏆 পাওয়া গেছে ${clips.size}টি ভাইরাল মোমেন্ট:",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                items(clips) { clip ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                activeVideo?.let { v -> onOpenClip(v, clip) }
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Score badge
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFFFE6230))
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "🔥 ${clip.score}% Viral",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                }
+
+                                // Timestamp
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF2A2A32))
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "⏱ ${clip.start} - ${clip.end} (${clip.endSeconds - clip.startSeconds}s)",
+                                        color = Color(0xFF00E5FF),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text(
+                                text = clip.hook,
+                                color = Color(0xFFFFD700),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Black,
+                                lineHeight = 22.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = clip.title,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            if (clip.hashtags.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = clip.hashtags,
+                                    color = Color(0xFF81D4FA),
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { activeVideo?.let { v -> onOpenClip(v, clip) } },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                                ) {
+                                    Text("▶ ক্লিপ প্লে ও প্রিভিউ", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        val shareText = "${clip.hook}\n\n${clip.title}\n${clip.hashtags}\n\nClip: ${activeVideo?.url}&t=${clip.startSeconds}s"
+                                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                            putExtra(Intent.EXTRA_TEXT, shareText)
+                                            type = "text/plain"
+                                        }
+                                        context.startActivity(Intent.createChooser(sendIntent, "Share Clip"))
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                                ) {
+                                    Text("📤")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 2. CLIP DETAIL & PLAYER SCREEN
+// -------------------------------------------------------------
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun ClipDetailScreen(
+    video: VideoInfo,
+    clip: Clip,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    var selectedRatio by remember { mutableStateOf("9:16") } // "9:16", "1:1", "16:9"
+    var subtitleColor by remember { mutableStateOf(Color(0xFFFFD700)) } // Gold
+    var subtitleFontSize by remember { mutableFloatStateOf(18f) }
+    var subtitlePosition by remember { mutableStateOf("BOTTOM") } // "BOTTOM", "MIDDLE", "TOP"
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF141416))
+    ) {
+        TopBar(
+            title = "${clip.start} - ${clip.end}",
+            onBack = onBack
+        )
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Interactive Video Player Box with Aspect Ratio Crop Simulation
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(
+                                when (selectedRatio) {
+                                    "9:16" -> 400.dp
+                                    "1:1" -> 300.dp
+                                    else -> 220.dp
+                                }
+                            )
+                            .background(Color.Black),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // YouTube iframe embed
+                        AndroidView(
+                            factory = { ctx ->
+                                WebView(ctx).apply {
+                                    settings.javaScriptEnabled = true
+                                    settings.domStorageEnabled = true
+                                    settings.mediaPlaybackRequiresUserGesture = false
+                                    val html = """
+                                        <!DOCTYPE html>
+                                        <html>
+                                        <head>
+                                            <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+                                            <style>
+                                                body, html { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
+                                                iframe { width:100%; height:100%; border:none; }
+                                            </style>
+                                        </head>
+                                        <body>
+                                            <iframe src="https://www.youtube.com/embed/${video.id}?start=${clip.startSeconds}&end=${clip.endSeconds}&autoplay=1&playsinline=1&controls=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+                                        </body>
+                                        </html>
+                                    """.trimIndent()
+                                    loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "UTF-8", null)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        // Aspect ratio crop guide overlay
+                        if (selectedRatio == "9:16") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .aspectRatio(9f / 16f)
+                                    .border(2.dp, Color(0x88FE6230), RoundedCornerShape(8.dp))
+                            )
+                        } else if (selectedRatio == "1:1") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .aspectRatio(1f)
+                                    .border(2.dp, Color(0x88FE6230), RoundedCornerShape(8.dp))
+                            )
+                        }
+
+                        // Subtitle Overlay Simulation
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            contentAlignment = when (subtitlePosition) {
+                                "TOP" -> Alignment.TopCenter
+                                "MIDDLE" -> Alignment.Center
+                                else -> Alignment.BottomCenter
+                            }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xCC000000))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = clip.hook,
+                                    color = subtitleColor,
+                                    fontSize = subtitleFontSize.sp,
+                                    fontWeight = FontWeight.Black,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Aspect Ratio Selector
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "📐 ফরম্যাট ও রেশিও নির্বাচন:",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("9:16 (Shorts/Reels)", "1:1 (Square)", "16:9 (Landscape)").forEach { ratioLabel ->
+                                val ratioKey = ratioLabel.substringBefore(" ")
+                                val isSelected = selectedRatio == ratioKey
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) Color(0xFFFE6230) else Color(0xFF2A2A32))
+                                        .clickable { selectedRatio = ratioKey }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = ratioKey,
+                                        color = if (isSelected) Color.White else Color(0xFFA0A0A8),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Subtitle Customization
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "🎨 বাংলা সাবটাইটেল স্টাইল ও কালার:",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            listOf(
+                                Color(0xFFFFD700) to "হলুদ",
+                                Color(0xFF00E5FF) to "সায়ান",
+                                Color(0xFF00E676) to "সবুজ",
+                                Color(0xFFFFFFFF) to "সাদা",
+                                Color(0xFFFF5252) to "লাল"
+                            ).forEach { (color, _) ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                        .border(
+                                            width = if (subtitleColor == color) 3.dp else 0.dp,
+                                            color = Color.White,
+                                            shape = CircleShape
+                                        )
+                                        .clickable { subtitleColor = color }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Subtitle Position
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf("TOP" to "উপরে", "MIDDLE" to "মাঝে", "BOTTOM" to "নিচে").forEach { (posKey, posLabel) ->
+                                val isSelected = subtitlePosition == posKey
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) Color(0xFF3949AB) else Color(0xFF2A2A32))
+                                        .clickable { subtitlePosition = posKey }
+                                        .padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = posLabel,
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Clip Details & Subtitles Text
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "📝 হুক ও সাবটাইটেল স্ক্রিপ্ট:",
+                            color = Color(0xFF9E9EA4),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = clip.hook,
+                            color = Color(0xFFFFD700),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = clip.subtitles.ifBlank { "টাইমস্ট্যাম্প অনুযায়ী সাবটাইটেল স্বয়ংক্রিয়ভাবে যুক্ত করা আছে।" },
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = clip.hashtags,
+                            color = Color(0xFF81D4FA),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            // Direct Actions
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = {
+                            val ytIntent = Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://youtu.be/${video.id}?t=${clip.startSeconds}")
+                            )
+                            context.startActivity(ytIntent)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFCC0000))
+                    ) {
+                        Text("▶ YouTube এ এই ক্লিপটি ওপেন করুন", fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val fullText = "${clip.hook}\n\n${clip.title}\n\n${clip.subtitles}\n\n${clip.hashtags}"
+                            clipboard.setPrimaryClip(ClipData.newPlainText("MAKLU CUT Clip", fullText))
+                            Toast.makeText(context, "সাবটাইটেল ও ট্যাগ কপি করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                    ) {
+                        Text("📋 হুক ও সাবটাইটেল কপি করুন", fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val shareText = "${clip.hook}\n\n${clip.title}\n\n${clip.hashtags}\n\nভিডিও লিংক: https://youtu.be/${video.id}?t=${clip.startSeconds}"
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Share Clip"))
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Text("📤 সোশাল মিডিয়ায় শেয়ার করুন (Shorts/Reels)", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// 3. SETTINGS SCREEN
+// -------------------------------------------------------------
+@Composable
+fun SettingsScreen(
+    currentApiKey: String,
+    currentModel: String,
+    onSave: (String, String) -> Unit,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    var apiKeyInput by remember { mutableStateOf(currentApiKey) }
+    var modelInput by remember { mutableStateOf(currentModel) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF141416))
+    ) {
+        TopBar(title = "সেটিংস", onBack = onBack)
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "🤖 Google Gemini AI সেটিংস",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "আপনার প্রি-কনফিগার করা Gemini API কী ইতিমধ্যে যুক্ত আছে। চাইলে নতুন কী বসাতে পারেন।",
+                            color = Color(0xFFA0A0A8),
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "Gemini API Key:",
+                            color = Color(0xFFFE6230),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = apiKeyInput,
+                            onValueChange = { apiKeyInput = it },
+                            placeholder = { Text("Gemini API Key...", color = Color.Gray) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFFFE6230),
+                                unfocusedBorderColor = Color(0xFF33333C),
+                                focusedContainerColor = Color(0xFF141416),
+                                unfocusedContainerColor = Color(0xFF141416)
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        Text(
+                            text = "AI Model:",
+                            color = Color(0xFFFE6230),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        listOf(
+                            "gemini-3.5-flash",
+                            "gemini-3-flash-preview",
+                            "gemini-flash-latest"
+                        ).forEach { m ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { modelInput = m }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = modelInput == m,
+                                    onClick = { modelInput = m },
+                                    colors = RadioButtonDefaults.colors(selectedColor = Color(0xFFFE6230))
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(text = m, color = Color.White, fontSize = 14.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = {
+                                onSave(apiKeyInput.trim(), modelInput.trim())
+                                Toast.makeText(context, "সেটিংস সংরক্ষিত হয়েছে!", Toast.LENGTH_SHORT).show()
+                                onBack()
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFE6230))
+                        ) {
+                            Text("💾 সেটিংস সংরক্ষণ করুন", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "ℹ️ MAKLU CUT সম্পর্কে",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Version: 2.0 (Standalone Mobile Edition)\nCreated by Faizul Islam Rifat\n\nবৈশিষ্ট্যসমূহ:\n• ১০০% মোবাইলেই সম্পূর্ণ অফলাইন বা অনলাইন মোডে কাজ করে।\n• কম্পিউটারের সাহায্য বা ব্যাকএন্ড সার্ভার চালু রাখার প্রয়োজন নেই।\n• স্মার্ট বাংলা সাবটাইটেল ও ভাইরাল হুক জেনারেশন।",
+                            color = Color(0xFFA0A0A8),
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

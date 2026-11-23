@@ -21,13 +21,15 @@ Paste a YouTube, Twitch, or Kick video link (or upload any local video file), an
 
 ## 🚀 How to Use MAKLU CUT (User Guide)
 
-### 📱 Android App (APK)
-MAKLU CUT now comes with an official Android mobile application:
+### 📱 Android App (100% Standalone - No PC or Server Needed!)
+MAKLU CUT includes an official standalone Android app (`maklu-cut.apk`):
 - **Download APK**: Download [`maklu-cut.apk`](maklu-cut.apk) directly from this repository root.
-- **How to Use**:
-  1. Transfer `maklu-cut.apk` to your Android device and tap to install.
-  2. Ensure your PC is running MAKLU CUT (`start.bat`) on the same Wi-Fi network.
-  3. Open the app, tap ⚙️ (Settings) to enter your PC's Wi-Fi IP (e.g. `http://192.168.1.15:8765`), and clip videos on the go!
+- **Standalone Mobile Features**:
+  1. **Zero PC Setup**: Runs 100% on your Android phone without needing a computer or local server running!
+  2. **Direct AI Clip Scouting**: Paste any YouTube link, and the app connects directly to Google Gemini AI to extract viral moments, timestamps, titles, descriptions, and hashtags.
+  3. **Bengali Subtitles & Hooks**: Generates fluent Bengali hooks (`Hind Siliguri` style) and captions with customizable colors (Yellow, Cyan, Green, White, Red) and positions (Top, Middle, Bottom).
+  4. **Multi-Format Preview**: Toggle between 9:16 (Shorts/Reels/TikTok), 1:1 (Square), and 16:9 (Landscape).
+  5. **1-Tap Share**: Share clips directly to YouTube Shorts, Instagram Reels, TikTok, or copy hooks and hashtags in one tap.
 
 ### Prerequisites
 Make sure your computer has:
