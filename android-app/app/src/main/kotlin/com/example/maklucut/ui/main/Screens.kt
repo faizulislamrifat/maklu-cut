@@ -6,7 +6,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
@@ -47,158 +49,257 @@ enum class AppScreen {
 }
 
 // -------------------------------------------------------------
-// DOWNLOAD MODAL DIALOG
+// BRAND LOGO WITH COMFORTABLE GAP / PADDING
 // -------------------------------------------------------------
 @Composable
-fun DownloadDialog(
+fun BrandLogo(
+    size: Int = 40,
+    padding: Int = 6,
+    cornerRadius: Int = 10
+) {
+    Box(
+        modifier = Modifier
+            .size(size.dp)
+            .clip(RoundedCornerShape(cornerRadius.dp))
+            .background(Color(0xFF222228))
+            .border(1.dp, Color(0xFF33333E), RoundedCornerShape(cornerRadius.dp))
+            .padding(padding.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.app_icon),
+            contentDescription = "MAKLU CUT Logo",
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+// -------------------------------------------------------------
+// 100% IN-APP DOWNLOADER MODAL (NO EXTERNAL BROWSER REDIRECT)
+// -------------------------------------------------------------
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun InAppDownloadDialog(
     video: VideoInfo,
     clip: Clip,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    var selectedServer by remember { mutableIntStateOf(0) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var isPageLoading by remember { mutableStateOf(true) }
+
+    val servers = listOf(
+        "Loader HD" to 0,
+        "SaveFrom" to 1,
+        "SSYouTube" to 2,
+        "Y2Mate" to 3
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1E1E24),
+        containerColor = Color(0xFF1A1A20),
         titleContentColor = Color.White,
         textContentColor = Color.White,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
         title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Image(
-                    painter = painterResource(id = R.drawable.app_icon),
-                    contentDescription = "Logo",
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text("📥 ক্লিপ ও ভিডিও ডাউনলোড", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BrandLogo(size = 32, padding = 4, cornerRadius = 8)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text("📥 ইন-অ্যাপ ডাউনলোড সেন্টার", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("অ্যাপের ভেতরে থেকেই সরাসরি ডাউনলোড", fontSize = 11.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
+                    }
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Text("✕", color = Color(0xFFA0A0A8), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "${clip.hook}\n⏱ টাইমস্ট্যাম্প: ${clip.start} - ${clip.end} (${clip.endSeconds - clip.startSeconds}s)",
-                    color = Color(0xFFFFD700),
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Clip summary info
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF22222A))
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = clip.hook,
+                            color = Color(0xFFFFD700),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "⏱ ক্লিপ সময়: ${clip.start} - ${clip.end} (${clip.endSeconds - clip.startSeconds} সেকেন্ড)",
+                            color = Color(0xFF00E5FF),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
 
-                Divider(color = Color(0xFF33333E))
+                HorizontalDivider(color = Color(0xFF2C2C36))
 
-                Text(
-                    text = "🎬 ১. ভিডিও ডাউনলোড (HD MP4):",
-                    color = Color(0xFF00E5FF),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                // Server Tabs
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    servers.forEach { (name, idx) ->
+                        val isSel = selectedServer == idx
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSel) Color(0xFFFE6230) else Color(0xFF262630))
+                                .clickable {
+                                    selectedServer = idx
+                                    isPageLoading = true
+                                    val newUrl = DownloadHelper.getInAppDownloadUrl(video.id, idx)
+                                    webViewRef?.loadUrl(newUrl)
+                                }
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = name,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSel) Color.White else Color(0xFFA0A0A8)
+                            )
+                        }
+                    }
+                }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // In-App WebView Video Downloader
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0xFF141418))
+                        .border(1.dp, Color(0xFF33333E), RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AndroidView(
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                settings.javaScriptEnabled = true
+                                settings.domStorageEnabled = true
+                                settings.loadWithOverviewMode = true
+                                settings.useWideViewPort = true
+                                settings.cacheMode = WebSettings.LOAD_DEFAULT
+
+                                webViewClient = object : WebViewClient() {
+                                    override fun onPageFinished(view: WebView?, url: String?) {
+                                        super.onPageFinished(view, url)
+                                        isPageLoading = false
+                                    }
+                                }
+
+                                // Intercept downloads directly inside the app
+                                setDownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
+                                    DownloadHelper.enqueueDownload(ctx, url, clip.title, clip)
+                                    Toast.makeText(
+                                        ctx,
+                                        "✅ ভিডিও ডাউনলোড শুরু হয়েছে! ফোনের নোটিফিকেশন বার চেক করুন।",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    onDismiss()
+                                }
+
+                                val initialUrl = DownloadHelper.getInAppDownloadUrl(video.id, selectedServer)
+                                loadUrl(initialUrl)
+                                webViewRef = this
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    if (isPageLoading) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(0xEE141418))
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFFFE6230), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("ডাউনলোড ইঞ্জিন লোড হচ্ছে...", color = Color(0xFFA0A0A8), fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = Color(0xFF2C2C36))
+
+                // Instant Subtitles & Script Save Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Button(
                         onClick = {
-                            DownloadHelper.openVideoDownloader(context, video.id, "savefrom")
-                            onDismiss()
+                            val srt = DownloadHelper.generateSrtContent(clip)
+                            val ok = DownloadHelper.saveFileToDownloads(
+                                context = context,
+                                filename = "MAKLU_${clip.id}_subtitles.srt",
+                                mimeType = "application/x-subrip",
+                                content = srt
+                            )
+                            if (ok) {
+                                Toast.makeText(context, "✅ .SRT সাবটাইটেল ডাউনলোড ফোল্ডারে সেভ হয়েছে!", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "ডাউনলোড সম্পন্ন করা যায়নি।", Toast.LENGTH_SHORT).show()
+                            }
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3949AB)),
+                        contentPadding = PaddingValues(vertical = 8.dp)
                     ) {
-                        Text("🚀 SaveFrom", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = {
-                            DownloadHelper.openVideoDownloader(context, video.id, "loader")
-                            onDismiss()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
-                    ) {
-                        Text("⚡ Loader.to", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            DownloadHelper.openVideoDownloader(context, video.id, "ssyoutube")
-                            onDismiss()
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                    ) {
-                        Text("SSYouTube", fontSize = 12.sp)
+                        Text("📄 .SRT সাবটাইটেল", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(
                         onClick = {
-                            DownloadHelper.openVideoDownloader(context, video.id, "y2mate")
-                            onDismiss()
+                            val fullScript = "${clip.hook}\n\nTitle: ${clip.title}\nTime: ${clip.start} - ${clip.end}\n\nSubtitles:\n${clip.subtitles}\n\nHashtags:\n${clip.hashtags}"
+                            val ok = DownloadHelper.saveFileToDownloads(
+                                context = context,
+                                filename = "MAKLU_${clip.id}_script.txt",
+                                mimeType = "text/plain",
+                                content = fullScript
+                            )
+                            if (ok) {
+                                Toast.makeText(context, "✅ স্ক্রিপ্ট (.TXT) ডাউনলোড ফোল্ডারে সেভ হয়েছে!", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "ডাউনলোড সম্পন্ন করা যায়নি।", Toast.LENGTH_SHORT).show()
+                            }
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        contentPadding = PaddingValues(vertical = 8.dp)
                     ) {
-                        Text("Y2Mate", fontSize = 12.sp)
+                        Text("📝 স্ক্রিপ্ট (.TXT)", fontSize = 11.sp)
                     }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-                Divider(color = Color(0xFF33333E))
-
-                Text(
-                    text = "📄 ২. সাবটাইটেল ও স্ক্রিপ্ট ডাউনলোড:",
-                    color = Color(0xFFFFB74D),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Button(
-                    onClick = {
-                        val srt = DownloadHelper.generateSrtContent(clip)
-                        val ok = DownloadHelper.saveFileToDownloads(
-                            context = context,
-                            filename = "MAKLU_${clip.id}_subtitles.srt",
-                            mimeType = "application/x-subrip",
-                            content = srt
-                        )
-                        if (ok) {
-                            Toast.makeText(context, "✅ সাবটাইটেল (.SRT) ডাউনলোড ফোল্ডারে সেভ হয়েছে!", Toast.LENGTH_LONG).show()
-                        } else {
-                            Toast.makeText(context, "ডাউনলোড ব্যর্থ হয়েছে। পারমিশন চেক করুন।", Toast.LENGTH_SHORT).show()
-                        }
-                        onDismiss()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4527A0))
-                ) {
-                    Text("📄 সাবটাইটেল (.SRT) ডাউনলোড করুন", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        val fullScript = "${clip.hook}\n\nTitle: ${clip.title}\nTimestamp: ${clip.start} - ${clip.end}\n\nSubtitles:\n${clip.subtitles}\n\nHashtags:\n${clip.hashtags}"
-                        val ok = DownloadHelper.saveFileToDownloads(
-                            context = context,
-                            filename = "MAKLU_${clip.id}_script.txt",
-                            mimeType = "text/plain",
-                            content = fullScript
-                        )
-                        if (ok) {
-                            Toast.makeText(context, "✅ ফুল স্ক্রিপ্ট (.TXT) ডাউনলোড ফোল্ডারে সেভ হয়েছে!", Toast.LENGTH_LONG).show()
-                        } else {
-                            Toast.makeText(context, "ডাউনলোড ব্যর্থ হয়েছে।", Toast.LENGTH_SHORT).show()
-                        }
-                        onDismiss()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                ) {
-                    Text("📝 স্ক্রিপ্ট ও হ্যাশট্যাগ (.TXT) সেভ করুন", fontSize = 12.sp)
                 }
             }
         },
@@ -211,7 +312,7 @@ fun DownloadDialog(
 }
 
 // -------------------------------------------------------------
-// TOP BRAND BAR WITH LOGO
+// TOP BRAND BAR WITH PADDED LOGO
 // -------------------------------------------------------------
 @Composable
 fun TopBar(
@@ -222,7 +323,7 @@ fun TopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(60.dp)
+            .height(62.dp)
             .background(Color(0xFF1E1E22))
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -236,14 +337,8 @@ fun TopBar(
                 Spacer(modifier = Modifier.width(4.dp))
             }
 
-            // Brand Logo Image
-            Image(
-                painter = painterResource(id = R.drawable.app_icon),
-                contentDescription = "MAKLU CUT Logo",
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            )
+            // Beautiful Logo with comfortable gap
+            BrandLogo(size = 38, padding = 6, cornerRadius = 10)
 
             Spacer(modifier = Modifier.width(10.dp))
 
@@ -308,7 +403,7 @@ fun HomeScreen(
     var clips by remember { mutableStateOf<List<Clip>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Download modal state
+    // In-app download target
     var downloadClipTarget by remember { mutableStateOf<Clip?>(null) }
 
     fun doScout() {
@@ -349,7 +444,7 @@ fun HomeScreen(
     }
 
     if (downloadClipTarget != null && activeVideo != null) {
-        DownloadDialog(
+        InAppDownloadDialog(
             video = activeVideo!!,
             clip = downloadClipTarget!!,
             onDismiss = { downloadClipTarget = null }
@@ -384,19 +479,13 @@ fun HomeScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.app_icon),
-                                    contentDescription = "Logo",
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
+                                BrandLogo(size = 44, padding = 7, cornerRadius = 12)
+                                Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
                                         text = "MAKLU CUT",
                                         color = Color.White,
-                                        fontSize = 16.sp,
+                                        fontSize = 17.sp,
                                         fontWeight = FontWeight.Black
                                     )
                                     Text(
@@ -433,7 +522,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "কম্পিউটার বা সার্ভার ছাড়া সরাসরি আপনার ফোনেই চলে। AI দিয়ে বাংলা সাবটাইটেল, ভাইরাল মোমেন্ট বের করে এক ক্লিকে ডাউনলোড করুন।",
+                            text = "কম্পিউটার বা সার্ভার ছাড়া সরাসরি আপনার ফোনেই চলে। AI দিয়ে বাংলা সাবটাইটেল ও ক্লিপ বের করে অ্যাপের ভেতর থেকেই সরাসরি ডাউনলোড করুন।",
                             fontSize = 12.sp,
                             color = Color(0xFFA0A0A8),
                             lineHeight = 16.sp
@@ -694,7 +783,7 @@ fun HomeScreen(
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            // Action buttons: Preview, Download, Share
+                            // Action buttons: Preview, In-App Download, Share
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -761,7 +850,7 @@ fun ClipDetailScreen(
     var showDownloadDialog by remember { mutableStateOf(false) }
 
     if (showDownloadDialog) {
-        DownloadDialog(
+        InAppDownloadDialog(
             video = video,
             clip = clip,
             onDismiss = { showDownloadDialog = false }
@@ -1034,10 +1123,10 @@ fun ClipDetailScreen(
                 }
             }
 
-            // Direct Actions: DOWNLOAD, YouTube, Copy, Share
+            // Direct Actions: DOWNLOAD (In-App), YouTube, Copy, Share
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    // Big Download Button
+                    // Big In-App Download Button
                     Button(
                         onClick = { showDownloadDialog = true },
                         modifier = Modifier
@@ -1046,7 +1135,7 @@ fun ClipDetailScreen(
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
                     ) {
-                        Text("📥 এই ক্লিপ ও সাবটাইটেল ডাউনলোড করুন", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text("📥 একদম অ্যাপের ভেতরে থেকেই ডাউনলোড করুন", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Button(
@@ -1238,14 +1327,8 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Image(
-                                painter = painterResource(id = R.drawable.app_icon),
-                                contentDescription = "Logo",
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            BrandLogo(size = 38, padding = 6, cornerRadius = 10)
+                            Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
                                     text = "MAKLU CUT",
@@ -1254,7 +1337,7 @@ fun SettingsScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Version: 2.1 (Standalone Mobile)",
+                                    text = "Version: 2.2 (Standalone Mobile)",
                                     color = Color(0xFF9E9EA4),
                                     fontSize = 12.sp
                                 )
@@ -1262,7 +1345,7 @@ fun SettingsScreen(
                         }
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Created by Faizul Islam Rifat\n\nবৈশিষ্ট্যসমূহ:\n• সম্পূর্ণ মোবাইলেই চলে, কোনো পিসি সার্ভার দরকার নেই।\n• সরাসরি ভিডিও ও .SRT সাবটাইটেল ডাউনলোড সুবিধা।\n• অফিশিয়াল ব্র্যান্ড আইকন ও লোগো যুক্ত।",
+                            text = "Created by Faizul Islam Rifat\n\nবৈশিষ্ট্যসমূহ:\n• সম্পূর্ণ মোবাইলেই চলে, কোনো পিসি সার্ভার দরকার নেই।\n• একদম অ্যাপের ভেতর থেকেই সরাসরি ভিডিও ডাউনলোড।\n• ব্র্যান্ড লোগোর চারপাশে সুন্দর স্পেসিং ও প্রিমিয়াম ডিজাইন।",
                             color = Color(0xFFA0A0A8),
                             fontSize = 13.sp,
                             lineHeight = 18.sp
