@@ -38,6 +38,7 @@ import com.example.maklucut.data.DownloadHelper
 import com.example.maklucut.data.GeminiScout
 import com.example.maklucut.data.VideoInfo
 import com.example.maklucut.data.YouTubeHelper
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 enum class AppScreen {
@@ -92,7 +93,7 @@ fun DirectDownloadDialog(
         scope.launch {
             isResolving = true
             errorMsg = null
-            statusText = "ভিডিও ডাউনলোড লিংক প্রস্তুত করা হচ্ছে..."
+            statusText = "ভিডিও স্ট্রিম লিংক প্রস্তুত করা হচ্ছে..."
             try {
                 val directUrl = DownloadHelper.resolveDirectMp4Url(video.id, quality)
                 DownloadHelper.enqueueDownload(context, directUrl, clip.title, clip)
@@ -327,6 +328,8 @@ fun TopBar(
 fun HomeScreen(
     apiKey: String,
     modelName: String,
+    initialUrl: String = "",
+    onClearInitialUrl: () -> Unit = {},
     onOpenClip: (VideoInfo, Clip) -> Unit,
     onOpenSettings: () -> Unit
 ) {
@@ -334,7 +337,7 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val clipboard = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
 
-    var inputUrl by remember { mutableStateOf("") }
+    var inputUrl by remember { mutableStateOf(initialUrl) }
     var isLoading by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("") }
     var activeVideo by remember { mutableStateOf<VideoInfo?>(null) }
@@ -345,6 +348,13 @@ fun HomeScreen(
 
     // Direct in-app download target
     var downloadClipTarget by remember { mutableStateOf<Clip?>(null) }
+
+    LaunchedEffect(initialUrl) {
+        if (initialUrl.isNotBlank()) {
+            inputUrl = initialUrl
+            onClearInitialUrl()
+        }
+    }
 
     fun doScout() {
         if (apiKey.isBlank()) {
@@ -365,12 +375,15 @@ fun HomeScreen(
         scope.launch {
             isLoading = true
             errorMessage = null
-            statusText = "ভিডিওর তথ্য ও সাবটাইটেল সংগ্রহ করা হচ্ছে..."
+            statusText = "১/৩: ভিডিওর টাইটেল ও অডিও স্ক্যান হচ্ছে..."
             try {
                 val video = YouTubeHelper.fetchVideoDetails(videoId)
                 activeVideo = video
 
-                statusText = "Gemini AI দিয়ে ভাইরাল মোমেন্ট বিশ্লেষণ করা হচ্ছে..."
+                statusText = "২/৩: সাবটাইটেল ও ট্রান্সক্রিপ্ট সংগ্রহ হচ্ছে..."
+                delay(400)
+
+                statusText = "৩/৩: Gemini AI সেরা ভাইরাল মোমেন্ট নির্বাচন করছে..."
                 val foundClips = GeminiScout.scoutClips(
                     video = video,
                     apiKey = apiKey,
@@ -401,12 +414,26 @@ fun HomeScreen(
                 }
             },
             text = {
-                Text(
-                    text = "AI দিয়ে ভিডিও থেকে ভাইরাল ক্লিপ বের করতে আপনার ব্যক্তিগত Google Gemini API Key প্রয়োজন।\n\nএটি সম্পূর্ণ ফ্রি! আপনি Google AI Studio থেকে ফ্রি কী নিয়ে সেটিংসে পেস্ট করলেই অ্যাপটি কাজ করবে।",
-                    fontSize = 13.sp,
-                    color = Color(0xFFA0A0A8),
-                    lineHeight = 18.sp
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "AI দিয়ে ভিডিও থেকে ভাইরাল ক্লিপ বের করতে আপনার ব্যক্তিগত Google Gemini API Key প্রয়োজন।\n\nএটি সম্পূর্ণ ফ্রি! আপনি Google AI Studio থেকে ফ্রি কী নিয়ে সেটিংসে পেস্ট করলেই অ্যাপ কাজ করবে।",
+                        fontSize = 13.sp,
+                        color = Color(0xFFA0A0A8),
+                        lineHeight = 18.sp
+                    )
+
+                    Button(
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/app/apikey"))
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                    ) {
+                        Text("🌐 ফ্রি Gemini কী নিন (Google AI Studio)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             },
             confirmButton = {
                 Button(
@@ -575,6 +602,7 @@ fun HomeScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
+                        // Quick action buttons
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(
                                 onClick = {
@@ -604,6 +632,46 @@ fun HomeScreen(
                             }
                         }
 
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Try Sample Demo Chips
+                        Text(
+                            text = "বা নমুনা ভিডিও দিয়ে টেস্ট করুন:",
+                            color = Color(0xFF8E8E98),
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "🎙️ পডকাস্ট ডেমো" to "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                                "⚡ টক শো ডেমো" to "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+                                "💡 মোটিভেশন ডেমো" to "https://www.youtube.com/watch?v=kJQP7kiw5Fk"
+                            ).forEach { (label, sampleUrl) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0xFF262630))
+                                        .clickable {
+                                            inputUrl = sampleUrl
+                                            Toast.makeText(context, "নমুনা লিংক সেট হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 10.sp,
+                                        color = Color(0xFFE0E0E6),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(14.dp))
 
                         Button(
@@ -626,7 +694,7 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
-                                    text = "খোঁজা হচ্ছে...",
+                                    text = "বিশ্লেষণ হচ্ছে...",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
@@ -1251,6 +1319,21 @@ fun SettingsScreen(
                             lineHeight = 16.sp
                         )
 
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Get Free Key Button
+                        Button(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://aistudio.google.com/app/apikey"))
+                                context.startActivity(intent)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                        ) {
+                            Text("🌐 ফ্রি Gemini API Key নিন (Google AI Studio)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
@@ -1346,7 +1429,7 @@ fun SettingsScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Version: 2.3 (Standalone Mobile)",
+                                    text = "Version: 2.4 (Standalone Mobile)",
                                     color = Color(0xFF9E9EA4),
                                     fontSize = 12.sp
                                 )
@@ -1354,7 +1437,7 @@ fun SettingsScreen(
                         }
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Created by Faizul Islam Rifat\n\nবৈশিষ্ট্যসমূহ:\n• ১০০% সরাসরি ফোনে ডাউনলোড (কোনো বাহ্যিক ওয়েবসাইটে নেবে না)।\n• এপিআই কী কোনো সার্ভার বা গিটহাবে জমা থাকে না, কেবল আপনার ফোনেই থাকে।\n• আকর্ষণীয় ব্র্যান্ড লোগো ও বাংলা সাবটাইটেল সাপোর্ট।",
+                            text = "Created by Faizul Islam Rifat\n\nবৈশিষ্ট্যসমূহ:\n• ১০০% সরাসরি ফোনে ডাউনলোড (কোনো বাহ্যিক ওয়েবসাইটে নেবে না)।\n• ইউটিউব অ্যাপের Share মেনু থেকে সরাসরি ভিডিও ওপেন করার সুবিধা।\n• এপিআই কী কোনো সার্ভার বা গিটহাবে জমা থাকে না, কেবল আপনার ফোনেই থাকে।\n• আকর্ষণীয় ব্র্যান্ড লোগো ও বাংলা সাবটাইটেল সাপোর্ট।",
                             color = Color(0xFFA0A0A8),
                             fontSize = 13.sp,
                             lineHeight = 18.sp

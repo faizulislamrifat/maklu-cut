@@ -1261,6 +1261,7 @@ function drawShell() {  const nav = (v, icon, label, extra = "") => `<button cla
       c.live_job ? `<span class="sb-tag rec" title="Recording now"><i></i>Rec</span>`
         : liveOn(c).length ? `<span class="sb-tag" title="Live on ${esc(liveOn(c).map(([k]) => PLAT[k].name).join(" and "))}"><i></i>Live</span>` : "")).join("") +
     `<button class="nav-item" data-act="newcreator" title="New creator">${ic("plusc")}<span class="label">New creator</span></button>` +
+    `<h4><span>Mobile</span></h4><a class="nav-item" href="/maklu-cut.apk" download title="Download Android App (APK)" style="text-decoration:none"><svg viewBox="0 0 256 256" style="width:18px;height:18px;color:#4CAF50" fill="currentColor"><path d="M176,16a8,8,0,0,0-8,8V40H88V24a8,8,0,0,0-16,0V40A48.05,48.05,0,0,0,24,88v96a48.05,48.05,0,0,0,48,48h112a48.05,48.05,0,0,0,48-48V88A48.05,48.05,0,0,0,184,40V24A8,8,0,0,0,176,16ZM80,120a16,16,0,1,1,16,16A16,16,0,0,1,80,120Zm96,16a16,16,0,1,1,16-16A16,16,0,0,1,176,136Z"/></svg><span class="label">Android App (APK)</span></a>` +
     (S.status.user?.role === "admin" && S.status.accounts !== false ? `<h4><span>Owner</span></h4><a class="nav-item" href="/admin" title="Admin dashboard" style="text-decoration:none">${ic("shield")}<span class="label">Admin dashboard</span></a>` : ""));
   const st = S.status;
   const k = S.status.ai;

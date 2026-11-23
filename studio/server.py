@@ -36,7 +36,7 @@ def _quiet(fn):
 
 app = FastAPI(title="MAKLU CUT", docs_url=None, redoc_url=None, openapi_url=None)
 WEB = config.ROOT / "web"
-OPEN = ("/api/auth/", "/pub/", "/api/public", "/auth/google/", "/auth/verify", "/brand/", "/assets/", "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml")
+OPEN = ("/api/auth/", "/pub/", "/api/public", "/auth/google/", "/auth/verify", "/brand/", "/assets/", "/healthz", "/favicon.ico", "/robots.txt", "/sitemap.xml", "/maklu-cut.apk")
 PAGES = {"/": "landing.html", "/login": "auth.html", "/signup": "auth.html", "/reset": "reset.html",
          "/privacy": "legal.html", "/terms": "legal.html", "/acceptable-use": "legal.html"}
 VIDEO_TYPES = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".ts", ".flv"}
@@ -432,6 +432,14 @@ def asset(name: str):
 @app.get("/favicon.ico")
 def favicon():
     return RedirectResponse("/brand/favicon.svg", 308)
+
+
+@app.get("/maklu-cut.apk")
+def download_mobile_apk():
+    apk_file = ROOT / "maklu-cut.apk"
+    if apk_file.is_file():
+        return FileResponse(apk_file, filename="maklu-cut.apk", media_type="application/vnd.android.package-archive")
+    raise HTTPException(404, "APK not found")
 
 
 # ================================================================ sign up, sign in, sign out

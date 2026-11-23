@@ -1,6 +1,7 @@
 package com.example.maklucut
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -16,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import com.example.maklucut.data.Clip
 import com.example.maklucut.data.GeminiScout
 import com.example.maklucut.data.VideoInfo
+import com.example.maklucut.data.YouTubeHelper
 import com.example.maklucut.ui.main.AppScreen
 import com.example.maklucut.ui.main.ClipDetailScreen
 import com.example.maklucut.ui.main.HomeScreen
@@ -23,9 +25,14 @@ import com.example.maklucut.ui.main.SettingsScreen
 import com.example.maklucut.ui.theme.MAKLUCUTTheme
 
 class MainActivity : ComponentActivity() {
+
+    private var incomingSharedUrl by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        handleIncomingIntent(intent)
 
         val prefs = getSharedPreferences("maklu_prefs", Context.MODE_PRIVATE)
 
@@ -56,6 +63,8 @@ class MainActivity : ComponentActivity() {
                             HomeScreen(
                                 apiKey = apiKey,
                                 modelName = modelName,
+                                initialUrl = incomingSharedUrl ?: "",
+                                onClearInitialUrl = { incomingSharedUrl = null },
                                 onOpenClip = { video, clip ->
                                     selectedVideo = video
                                     selectedClip = clip
@@ -94,6 +103,21 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+            val videoId = YouTubeHelper.extractVideoId(sharedText)
+            if (videoId != null) {
+                incomingSharedUrl = "https://www.youtube.com/watch?v=$videoId"
             }
         }
     }
