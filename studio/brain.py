@@ -124,8 +124,10 @@ def _tidy(c, s, e):
     }
 
 
-def _same_word(old, new):
+def _same_word(old, new, is_bengali=False):
     """A caption fix may respell a word or turn it into digits. It may not swap in different words."""
+    if is_bengali and (re.search(r"[\u0980-\u09FF]", new) or re.search(r"[\u0980-\u09FF]", old)):
+        return True
     a, b = re.sub(r"[^a-z0-9\u0980-\u09FF]", "", old.lower()), re.sub(r"[^a-z0-9\u0980-\u09FF]", "", new.lower())
     return (not b) or (any(ch.isdigit() for ch in b) and len(new) <= 12) or difflib.SequenceMatcher(None, a, b).ratio() >= 0.45
 
@@ -518,7 +520,7 @@ def _fix_caption_words(words: list, title: str = "", lang: str = "") -> list:
             # translation ("lime" for चूना) is not taken for a spelling.
             if roman.has_hindi(w["w"]) and len(new.split()) <= 2 and not _same_word(roman.to_roman(w["w"]), new):
                 new = w["w"]
-        elif len(new) > max(24, len(w["w"]) * 4) or not _same_word(w["w"], new):   # a rewrite, not a fix: keep what was said
+        elif len(new) > max(24, len(w["w"]) * 4) or not _same_word(w["w"], new, is_bengali=bengali):   # a rewrite, not a fix: keep what was said
             new = w["w"]
         if new:
             fixed.append(dict(w, w=new))

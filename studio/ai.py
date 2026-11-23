@@ -19,7 +19,7 @@ from . import config
 
 # name -> (label shown on the pages, address, how it is spoken to, where to get a key, an example model id)
 PROVIDERS = {
-    "gemini": ("Gemini", "https://generativelanguage.googleapis.com/v1beta/models", "gemini", "https://aistudio.google.com/apikey", "gemini-2.5-flash"),
+    "gemini": ("Gemini", "https://generativelanguage.googleapis.com/v1beta/models", "gemini", "https://aistudio.google.com/apikey", "gemini-3.5-flash"),
     "openai": ("OpenAI", "https://api.openai.com/v1", "openai", "https://platform.openai.com/api-keys", "gpt-4o-mini"),
     "xai": ("Grok", "https://api.x.ai/v1", "openai", "https://console.x.ai", "grok-4"),
     "groq": ("Groq", "https://api.groq.com/openai/v1", "openai", "https://console.groq.com/keys", "llama-3.3-70b-versatile"),
@@ -254,14 +254,26 @@ def call(model: str, prompt: str, schema: dict):
 def _gemini(model, prompt, schema):
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.4, "responseMimeType": "application/json", "responseSchema": schema}}
-    r = httpx.post(f"{base_url()}/{model}:generateContent", json=body, headers={"x-goog-api-key": key()}, timeout=120)
-    if r.status_code != 200:
-        _fail(r, model)
-    data = r.json()
-    text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
-    u = data.get("usageMetadata", {})
-    sent = int(u.get("promptTokenCount") or 0)
-    return json.loads(text), sent, max(0, int(u.get("totalTokenCount") or 0) - sent)   # the answer, and any thinking billed with it
+    models_to_try = [model]
+    for alt in ("gemini-3.5-flash", "gemini-3-flash-preview", "gemini-flash-latest"):
+        if alt not in models_to_try:
+            models_to_try.append(alt)
+    last_err = None
+    for m in models_to_try:
+        try:
+            r = httpx.post(f"{base_url()}/{m}:generateContent", json=body, headers={"x-goog-api-key": key()}, timeout=120)
+            if r.status_code == 200:
+                data = r.json()
+                text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
+                u = data.get("usageMetadata", {})
+                sent = int(u.get("promptTokenCount") or 0)
+                return json.loads(text), sent, max(0, int(u.get("totalTokenCount") or 0) - sent)
+            last_err = r
+        except Exception as e:
+            last_err = e
+    if isinstance(last_err, httpx.Response):
+        _fail(last_err, model)
+    raise last_err or AIError("Gemini call failed on all models.")
 
 
 def _openai(model, prompt, schema):

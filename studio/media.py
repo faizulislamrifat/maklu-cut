@@ -17,10 +17,10 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # YouTube sometimes refuses a server's downloads altogether ("sign in to confirm you're not a bot"). It is a
 # refusal of the server, not of one video, so once it happens YouTube links are turned away at once for a few
 # minutes, with a clear message, instead of each one waiting to fail. Then the next link simply tries again.
-YT_PAUSE = 600
+YT_PAUSE = 10
 _yt_refused_until = 0.0
-YT_BLOCKED = ("YouTube isn't letting PeakCut download videos right now. Upload the video file instead, or use a "
-              "Twitch or Kick link. YouTube links will be tried again in a few minutes.")
+YT_BLOCKED = ("YouTube isn't letting MAKLU CUT download this video right now. Upload the video file instead, or use a "
+              "Twitch or Kick link. YouTube links will be tried again shortly.")
 _BOT_CHECK = re.compile(r"not a bot|confirm you.?re not|sign in to confirm(?! your age)", re.I)
 
 
@@ -97,14 +97,33 @@ class _Quiet:
 
 def _ydl(opts):
     import yt_dlp
-    # a channel or playlist link is answered as "a list" straight away, never walked video by video
-    return yt_dlp.YoutubeDL({"noplaylist": True, "quiet": True, "no_warnings": True, "logger": _Quiet(),
-                             "extract_flat": "in_playlist", "playlistend": 1, "socket_timeout": 20,
-                             "concurrent_fragment_downloads": 4, **opts})
+    base = {
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "logger": _Quiet(),
+        "extract_flat": "in_playlist",
+        "playlistend": 1,
+        "socket_timeout": 25,
+        "concurrent_fragment_downloads": 4,
+        "js_runtimes": {"node": {}},
+        "remote_components": ["ejs:github"],
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web", "mweb", "android", "ios"],
+            }
+        },
+    }
+    # Check for optional cookies file (cookies.txt or youtube_cookies.txt)
+    for cp in (config.DATA_DIR / "cookies.txt", config.DATA_DIR / "youtube_cookies.txt", Path("cookies.txt"), Path("youtube_cookies.txt")):
+        if cp.is_file():
+            base["cookiefile"] = str(cp)
+            break
+    return yt_dlp.YoutubeDL({**base, **opts})
 
 
 def _video_format(height):
-    return f"bv*[height<={height}][vcodec^=avc1]+ba[ext=m4a]/bv*[height<={height}]+ba/b[height<={height}]/b"
+    return f"bv*[height<={height}][vcodec^=avc1]+ba/bv*[height<={height}]+ba/b[height<={height}]/bv*+ba/b/best"
 
 
 def _biggest(job_dir: Path, stem: str) -> Path:
@@ -124,23 +143,110 @@ def info(url: str) -> dict:
             "thumbnail": i.get("thumbnail") or "", "kind": i.get("_type") or "video"}
 
 
+def _parse_vtt_words(text: str) -> list:
+    """Parse WebVTT subtitle text into words with timestamps."""
+    out = []
+    lines = text.strip().splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        m = re.match(r"(?:(\d+):)?(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(?:(\d+):)?(\d{2}):(\d{2})\.(\d{3})", line)
+        if m:
+            h1, m1, s1, ms1, h2, m2, s2, ms2 = m.groups()
+            t0 = (int(h1 or 0) * 3600) + int(m1) * 60 + int(s1) + int(ms1) / 1000.0
+            t1 = (int(h2 or 0) * 3600) + int(m2) * 60 + int(s2) + int(ms2) / 1000.0
+            dur = max(0.2, t1 - t0)
+            text_lines = []
+            i += 1
+            while i < len(lines) and lines[i].strip() and "-->" not in lines[i]:
+                clean_text = re.sub(r"<[^>]+>", "", lines[i].strip())
+                if clean_text:
+                    text_lines.append(clean_text)
+                i += 1
+            full_seg = " ".join(text_lines)
+            parts = [w for w in full_seg.split() if not (re.fullmatch(r"[\[(].*[\])]", w) or w in ("[", "]", "__"))]
+            for n, w in enumerate(parts):
+                at = t0 + dur * n / max(1, len(parts))
+                out.append({"w": w, "s": round(at, 2)})
+            continue
+        i += 1
+    out.sort(key=lambda w: w["s"])
+    for n, w in enumerate(out):
+        nxt = out[n + 1]["s"] if n + 1 < len(out) else w["s"] + 0.4
+        w["e"] = round(max(w["s"] + 0.08, min(nxt, w["s"] + 0.6)), 2)
+    return out
+
+
 def youtube_words(url: str):
     """YouTube's own transcript of a video, word by word: ([{'w', 's', 'e'}, ...], language), or None if the video
-    has none. Only the transcript in the language that was spoken is used, never a translation."""
+    has none. Checks human subtitles first (especially Bengali), then auto-captions."""
     if not is_youtube(url):
         return None
     import json
     with _youtube_guard(url), _ydl({}) as ydl:
         i = ydl.extract_info(url, download=False)
+        subs = i.get("subtitles") or {}
         auto = i.get("automatic_captions") or {}
-        key = next((k for k in auto if k.endswith("-orig")), None)
-        if not key and i.get("language") in auto:
-            key = i["language"]
-        track = next((f for f in auto.get(key) or [] if f.get("ext") == "json3" and f.get("url")), None) if key else None
-        if not track:
+
+        # 1. Prefer Bengali if available (manual or auto)
+        key = None
+        source_group = None
+        for k in ("bn", "bn-BD", "bn-IN"):
+            if k in subs:
+                key, source_group = k, subs
+                break
+            if k in auto:
+                key, source_group = k, auto
+                break
+
+        # 2. Check original language
+        if not key:
+            orig = next((k for k in auto if k.endswith("-orig")), None)
+            if orig:
+                key, source_group = orig, auto
+
+        # 3. Check language field
+        if not key:
+            lang = i.get("language")
+            if lang and lang in subs:
+                key, source_group = lang, subs
+            elif lang and lang in auto:
+                key, source_group = lang, auto
+
+        # 4. Fallback to any available subtitles track
+        if not key:
+            if subs:
+                key = next(iter(subs))
+                source_group = subs
+            elif auto:
+                key = next(iter(auto))
+                source_group = auto
+
+        if not key or not source_group:
             return None
-        raw = ydl.urlopen(track["url"]).read(40_000_000)
-    return _caption_words(json.loads(raw)), key.replace("-orig", "")
+
+        tracks = source_group.get(key) or []
+        track_json3 = next((f for f in tracks if f.get("ext") == "json3" and f.get("url")), None)
+        if track_json3:
+            try:
+                raw = ydl.urlopen(track_json3["url"]).read(40_000_000)
+                words = _caption_words(json.loads(raw))
+                if words:
+                    return words, key.replace("-orig", "")
+            except Exception:
+                pass
+
+        track_vtt = next((f for f in tracks if f.get("ext") == "vtt" and f.get("url")), None)
+        if track_vtt:
+            try:
+                vtt_text = ydl.urlopen(track_vtt["url"]).read(40_000_000).decode("utf-8", errors="replace")
+                words = _parse_vtt_words(vtt_text)
+                if words:
+                    return words, key.replace("-orig", "")
+            except Exception:
+                pass
+
+        return None
 
 
 def youtube_english_words(url: str):
@@ -249,7 +355,7 @@ def download_audio(url: str, job_dir: Path, on_progress=None) -> Path:
         if on_progress and d.get("status") == "downloading" and total:
             on_progress(d.get("downloaded_bytes", 0) / total)
 
-    with _youtube_guard(url), _ydl({"format": "ba[ext=m4a]/ba/worst", "outtmpl": str(job_dir / "audio_src.%(ext)s"),
+    with _youtube_guard(url), _ydl({"format": "ba[ext=m4a]/ba/b/bestaudio/best", "outtmpl": str(job_dir / "audio_src.%(ext)s"),
                "progress_hooks": [hook]}) as ydl:
         ydl.download([url])
     return _biggest(job_dir, "audio_src")

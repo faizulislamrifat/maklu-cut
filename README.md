@@ -21,6 +21,14 @@ Paste a YouTube, Twitch, or Kick video link (or upload any local video file), an
 
 ## 🚀 How to Use MAKLU CUT (User Guide)
 
+### 📱 Android App (APK)
+MAKLU CUT now comes with an official Android mobile application:
+- **Download APK**: Download [`maklu-cut.apk`](maklu-cut.apk) directly from this repository root.
+- **How to Use**:
+  1. Transfer `maklu-cut.apk` to your Android device and tap to install.
+  2. Ensure your PC is running MAKLU CUT (`start.bat`) on the same Wi-Fi network.
+  3. Open the app, tap ⚙️ (Settings) to enter your PC's Wi-Fi IP (e.g. `http://192.168.1.15:8765`), and clip videos on the go!
+
 ### Prerequisites
 Make sure your computer has:
 1. **Python 3.10+** ([python.org](https://www.python.org/downloads/)) — *Make sure to check "Add Python to PATH" during installation.*
