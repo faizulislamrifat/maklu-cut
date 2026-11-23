@@ -6,10 +6,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.webkit.WebSettings
 import android.webkit.WebView
 import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,13 +25,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.maklucut.R
 import com.example.maklucut.data.Clip
+import com.example.maklucut.data.DownloadHelper
 import com.example.maklucut.data.GeminiScout
 import com.example.maklucut.data.VideoInfo
 import com.example.maklucut.data.YouTubeHelper
@@ -44,7 +47,171 @@ enum class AppScreen {
 }
 
 // -------------------------------------------------------------
-// TOP BRAND BAR
+// DOWNLOAD MODAL DIALOG
+// -------------------------------------------------------------
+@Composable
+fun DownloadDialog(
+    video: VideoInfo,
+    clip: Clip,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF1E1E24),
+        titleContentColor = Color.White,
+        textContentColor = Color.White,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    painter = painterResource(id = R.drawable.app_icon),
+                    contentDescription = "Logo",
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("📥 ক্লিপ ও ভিডিও ডাউনলোড", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "${clip.hook}\n⏱ টাইমস্ট্যাম্প: ${clip.start} - ${clip.end} (${clip.endSeconds - clip.startSeconds}s)",
+                    color = Color(0xFFFFD700),
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+
+                Divider(color = Color(0xFF33333E))
+
+                Text(
+                    text = "🎬 ১. ভিডিও ডাউনলোড (HD MP4):",
+                    color = Color(0xFF00E5FF),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            DownloadHelper.openVideoDownloader(context, video.id, "savefrom")
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                    ) {
+                        Text("🚀 SaveFrom", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            DownloadHelper.openVideoDownloader(context, video.id, "loader")
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                    ) {
+                        Text("⚡ Loader.to", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            DownloadHelper.openVideoDownloader(context, video.id, "ssyoutube")
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Text("SSYouTube", fontSize = 12.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            DownloadHelper.openVideoDownloader(context, video.id, "y2mate")
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Text("Y2Mate", fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Divider(color = Color(0xFF33333E))
+
+                Text(
+                    text = "📄 ২. সাবটাইটেল ও স্ক্রিপ্ট ডাউনলোড:",
+                    color = Color(0xFFFFB74D),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Button(
+                    onClick = {
+                        val srt = DownloadHelper.generateSrtContent(clip)
+                        val ok = DownloadHelper.saveFileToDownloads(
+                            context = context,
+                            filename = "MAKLU_${clip.id}_subtitles.srt",
+                            mimeType = "application/x-subrip",
+                            content = srt
+                        )
+                        if (ok) {
+                            Toast.makeText(context, "✅ সাবটাইটেল (.SRT) ডাউনলোড ফোল্ডারে সেভ হয়েছে!", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "ডাউনলোড ব্যর্থ হয়েছে। পারমিশন চেক করুন।", Toast.LENGTH_SHORT).show()
+                        }
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4527A0))
+                ) {
+                    Text("📄 সাবটাইটেল (.SRT) ডাউনলোড করুন", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        val fullScript = "${clip.hook}\n\nTitle: ${clip.title}\nTimestamp: ${clip.start} - ${clip.end}\n\nSubtitles:\n${clip.subtitles}\n\nHashtags:\n${clip.hashtags}"
+                        val ok = DownloadHelper.saveFileToDownloads(
+                            context = context,
+                            filename = "MAKLU_${clip.id}_script.txt",
+                            mimeType = "text/plain",
+                            content = fullScript
+                        )
+                        if (ok) {
+                            Toast.makeText(context, "✅ ফুল স্ক্রিপ্ট (.TXT) ডাউনলোড ফোল্ডারে সেভ হয়েছে!", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "ডাউনলোড ব্যর্থ হয়েছে।", Toast.LENGTH_SHORT).show()
+                        }
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                ) {
+                    Text("📝 স্ক্রিপ্ট ও হ্যাশট্যাগ (.TXT) সেভ করুন", fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("বন্ধ করুন", color = Color(0xFFFE6230), fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+// -------------------------------------------------------------
+// TOP BRAND BAR WITH LOGO
 // -------------------------------------------------------------
 @Composable
 fun TopBar(
@@ -57,7 +224,7 @@ fun TopBar(
             .fillMaxWidth()
             .height(60.dp)
             .background(Color(0xFF1E1E22))
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -66,8 +233,20 @@ fun TopBar(
                 IconButton(onClick = onBack) {
                     Text("←", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 }
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(4.dp))
             }
+
+            // Brand Logo Image
+            Image(
+                painter = painterResource(id = R.drawable.app_icon),
+                contentDescription = "MAKLU CUT Logo",
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(8.dp))
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
             Text(
                 text = "MAKLU",
                 fontSize = 20.sp,
@@ -84,10 +263,10 @@ fun TopBar(
                 letterSpacing = 1.sp
             )
             if (title != null) {
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "• $title",
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     color = Color(0xFF9E9EA4),
                     fontWeight = FontWeight.Medium
                 )
@@ -129,6 +308,9 @@ fun HomeScreen(
     var clips by remember { mutableStateOf<List<Clip>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
+    // Download modal state
+    var downloadClipTarget by remember { mutableStateOf<Clip?>(null) }
+
     fun doScout() {
         if (inputUrl.isBlank()) {
             Toast.makeText(context, "অনুগ্রহ করে একটি ইউটিউব লিংক দিন", Toast.LENGTH_SHORT).show()
@@ -166,6 +348,14 @@ fun HomeScreen(
         }
     }
 
+    if (downloadClipTarget != null && activeVideo != null) {
+        DownloadDialog(
+            video = activeVideo!!,
+            clip = downloadClipTarget!!,
+            onDismiss = { downloadClipTarget = null }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -180,7 +370,7 @@ fun HomeScreen(
             contentPadding = PaddingValues(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Hero Banner
+            // Hero Banner with App Logo
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -188,33 +378,65 @@ fun HomeScreen(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "📱 Standalone Phone Mode",
-                                color = Color(0xFF4CAF50),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "• No PC needed",
-                                color = Color(0xFF8E8E93),
-                                fontSize = 12.sp
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.app_icon),
+                                    contentDescription = "Logo",
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "MAKLU CUT",
+                                        color = Color.White,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                    Text(
+                                        text = "AI Viral Clip & Subtitles Maker",
+                                        color = Color(0xFFFE6230),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF2E7D32))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "📱 100% Mobile",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "ইউটিউব ভিডিও থেকে ভাইরাল রিলস ও শর্টস তৈরি করুন",
-                            fontSize = 18.sp,
+                            text = "ইউটিউব ভিডিও থেকে ভাইরাল রিলস, শর্টস তৈরি ও ডাউনলোড করুন",
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color.White,
+                            lineHeight = 20.sp
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "সম্পূর্ণ মোবাইলেই সরাসরি রান হয়। কম্পিউটার বা সার্ভার ছাড়াই AI ভাইরাল ক্লিপ ও বাংলা সাবটাইটেল বের করে দেয়।",
-                            fontSize = 13.sp,
+                            text = "কম্পিউটার বা সার্ভার ছাড়া সরাসরি আপনার ফোনেই চলে। AI দিয়ে বাংলা সাবটাইটেল, ভাইরাল মোমেন্ট বের করে এক ক্লিকে ডাউনলোড করুন।",
+                            fontSize = 12.sp,
                             color = Color(0xFFA0A0A8),
-                            lineHeight = 18.sp
+                            lineHeight = 16.sp
                         )
                     }
                 }
@@ -229,7 +451,7 @@ fun HomeScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "ভিডিও লিংক পেস্ট করুন",
+                            text = "ইউটিউব ভিডিও লিংক দিন",
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
@@ -470,19 +692,29 @@ fun HomeScreen(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
 
+                            // Action buttons: Preview, Download, Share
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Button(
                                     onClick = { activeVideo?.let { v -> onOpenClip(v, clip) } },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1.2f),
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                                 ) {
-                                    Text("▶ ক্লিপ প্লে ও প্রিভিউ", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("▶ প্রিভিউ", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = { downloadClipTarget = clip },
+                                    modifier = Modifier.weight(1.2f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                                ) {
+                                    Text("📥 ডাউনলোড", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
 
                                 OutlinedButton(
@@ -494,8 +726,10 @@ fun HomeScreen(
                                         }
                                         context.startActivity(Intent.createChooser(sendIntent, "Share Clip"))
                                     },
+                                    modifier = Modifier.width(48.dp),
                                     shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                    contentPadding = PaddingValues(0.dp)
                                 ) {
                                     Text("📤")
                                 }
@@ -523,6 +757,16 @@ fun ClipDetailScreen(
     var subtitleColor by remember { mutableStateOf(Color(0xFFFFD700)) } // Gold
     var subtitleFontSize by remember { mutableFloatStateOf(18f) }
     var subtitlePosition by remember { mutableStateOf("BOTTOM") } // "BOTTOM", "MIDDLE", "TOP"
+
+    var showDownloadDialog by remember { mutableStateOf(false) }
+
+    if (showDownloadDialog) {
+        DownloadDialog(
+            video = video,
+            clip = clip,
+            onDismiss = { showDownloadDialog = false }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -790,9 +1034,21 @@ fun ClipDetailScreen(
                 }
             }
 
-            // Direct Actions
+            // Direct Actions: DOWNLOAD, YouTube, Copy, Share
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Big Download Button
+                    Button(
+                        onClick = { showDownloadDialog = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                    ) {
+                        Text("📥 এই ক্লিপ ও সাবটাইটেল ডাউনলোড করুন", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    }
+
                     Button(
                         onClick = {
                             val ytIntent = Intent(
@@ -981,15 +1237,32 @@ fun SettingsScreen(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Image(
+                                painter = painterResource(id = R.drawable.app_icon),
+                                contentDescription = "Logo",
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "MAKLU CUT",
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Version: 2.1 (Standalone Mobile)",
+                                    color = Color(0xFF9E9EA4),
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "ℹ️ MAKLU CUT সম্পর্কে",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Version: 2.0 (Standalone Mobile Edition)\nCreated by Faizul Islam Rifat\n\nবৈশিষ্ট্যসমূহ:\n• ১০০% মোবাইলেই সম্পূর্ণ অফলাইন বা অনলাইন মোডে কাজ করে।\n• কম্পিউটারের সাহায্য বা ব্যাকএন্ড সার্ভার চালু রাখার প্রয়োজন নেই।\n• স্মার্ট বাংলা সাবটাইটেল ও ভাইরাল হুক জেনারেশন।",
+                            text = "Created by Faizul Islam Rifat\n\nবৈশিষ্ট্যসমূহ:\n• সম্পূর্ণ মোবাইলেই চলে, কোনো পিসি সার্ভার দরকার নেই।\n• সরাসরি ভিডিও ও .SRT সাবটাইটেল ডাউনলোড সুবিধা।\n• অফিশিয়াল ব্র্যান্ড আইকন ও লোগো যুক্ত।",
                             color = Color(0xFFA0A0A8),
                             fontSize = 13.sp,
                             lineHeight = 18.sp
