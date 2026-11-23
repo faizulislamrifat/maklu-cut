@@ -6,9 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
@@ -75,186 +73,126 @@ fun BrandLogo(
 }
 
 // -------------------------------------------------------------
-// 100% IN-APP DOWNLOADER MODAL (NO EXTERNAL BROWSER REDIRECT)
+// DIRECT 100% IN-APP DOWNLOAD DIALOG (ZERO BROWSER REDIRECT)
 // -------------------------------------------------------------
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun InAppDownloadDialog(
+fun DirectDownloadDialog(
     video: VideoInfo,
     clip: Clip,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var selectedServer by remember { mutableIntStateOf(0) }
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
-    var isPageLoading by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
 
-    val servers = listOf(
-        "Loader HD" to 0,
-        "SaveFrom" to 1,
-        "SSYouTube" to 2,
-        "Y2Mate" to 3
-    )
+    var isResolving by remember { mutableStateOf(false) }
+    var statusText by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    fun startDirectVideoDownload(quality: String) {
+        scope.launch {
+            isResolving = true
+            errorMsg = null
+            statusText = "ভিডিও ডাউনলোড লিংক প্রস্তুত করা হচ্ছে..."
+            try {
+                val directUrl = DownloadHelper.resolveDirectMp4Url(video.id, quality)
+                DownloadHelper.enqueueDownload(context, directUrl, clip.title, clip)
+                Toast.makeText(
+                    context,
+                    "✅ ডাউনলোড শুরু হয়েছে! ফোনের নোটিফিকেশন বার চেক করুন।",
+                    Toast.LENGTH_LONG
+                ).show()
+                onDismiss()
+            } catch (e: Exception) {
+                errorMsg = e.localizedMessage ?: "ডাউনলোড সম্পন্ন করা যায়নি। ইন্টারনেট সংযোগ চেক করুন।"
+                statusText = ""
+            } finally {
+                isResolving = false
+            }
+        }
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1A1A20),
+        onDismissRequest = { if (!isResolving) onDismiss() },
+        containerColor = Color(0xFF1E1E24),
         titleContentColor = Color.White,
         textContentColor = Color.White,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp),
         title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BrandLogo(size = 32, padding = 4, cornerRadius = 8)
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text("📥 ইন-অ্যাপ ডাউনলোড সেন্টার", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Text("অ্যাপের ভেতরে থেকেই সরাসরি ডাউনলোড", fontSize = 11.sp, color = Color(0xFF4CAF50), fontWeight = FontWeight.Medium)
-                    }
-                }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                    Text("✕", color = Color(0xFFA0A0A8), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BrandLogo(size = 32, padding = 4, cornerRadius = 8)
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text("📥 ডিরেক্ট ইন-অ্যাপ ডাউনলোড", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("কোনো বাইরের ওয়েবসাইটে যাবে না", fontSize = 11.sp, color = Color(0xFF4CAF50))
                 }
             }
         },
         text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 520.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Clip summary info
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF22222A))
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Text(
-                            text = clip.hook,
-                            color = Color(0xFFFFD700),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "⏱ ক্লিপ সময়: ${clip.start} - ${clip.end} (${clip.endSeconds - clip.startSeconds} সেকেন্ড)",
-                            color = Color(0xFF00E5FF),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "${clip.hook}\n⏱ টাইমস্ট্যাম্প: ${clip.start} - ${clip.end}",
+                    color = Color(0xFFFFD700),
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
 
-                HorizontalDivider(color = Color(0xFF2C2C36))
+                HorizontalDivider(color = Color(0xFF33333E))
 
-                // Server Tabs
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    servers.forEach { (name, idx) ->
-                        val isSel = selectedServer == idx
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSel) Color(0xFFFE6230) else Color(0xFF262630))
-                                .clickable {
-                                    selectedServer = idx
-                                    isPageLoading = true
-                                    val newUrl = DownloadHelper.getInAppDownloadUrl(video.id, idx)
-                                    webViewRef?.loadUrl(newUrl)
-                                }
-                                .padding(vertical = 6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = name,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSel) Color.White else Color(0xFFA0A0A8)
-                            )
-                        }
-                    }
-                }
+                Text(
+                    text = "🎬 ১. সরাসরি ভিডিও ডাউনলোড (MP4):",
+                    color = Color(0xFF00E5FF),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
 
-                // In-App WebView Video Downloader
-                Box(
+                // 720p HD Direct Download
+                Button(
+                    onClick = { startDirectVideoDownload("720") },
+                    enabled = !isResolving,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF141418))
-                        .border(1.dp, Color(0xFF33333E), RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center
+                        .height(46.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
                 ) {
-                    AndroidView(
-                        factory = { ctx ->
-                            WebView(ctx).apply {
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                settings.loadWithOverviewMode = true
-                                settings.useWideViewPort = true
-                                settings.cacheMode = WebSettings.LOAD_DEFAULT
-
-                                webViewClient = object : WebViewClient() {
-                                    override fun onPageFinished(view: WebView?, url: String?) {
-                                        super.onPageFinished(view, url)
-                                        isPageLoading = false
-                                    }
-                                }
-
-                                // Intercept downloads directly inside the app
-                                setDownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
-                                    DownloadHelper.enqueueDownload(ctx, url, clip.title, clip)
-                                    Toast.makeText(
-                                        ctx,
-                                        "✅ ভিডিও ডাউনলোড শুরু হয়েছে! ফোনের নোটিফিকেশন বার চেক করুন।",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                    onDismiss()
-                                }
-
-                                val initialUrl = DownloadHelper.getInAppDownloadUrl(video.id, selectedServer)
-                                loadUrl(initialUrl)
-                                webViewRef = this
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-
-                    if (isPageLoading) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color(0xEE141418))
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFFFE6230), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("ডাউনলোড ইঞ্জিন লোড হচ্ছে...", color = Color(0xFFA0A0A8), fontSize = 12.sp)
-                        }
+                    if (isResolving) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(statusText, fontSize = 12.sp)
+                    } else {
+                        Text("⚡ সরাসরি MP4 ডাউনলোড (720p HD)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
-                HorizontalDivider(color = Color(0xFF2C2C36))
-
-                // Instant Subtitles & Script Save Buttons
-                Row(
+                // 360p Fast Download
+                OutlinedButton(
+                    onClick = { startDirectVideoDownload("360") },
+                    enabled = !isResolving,
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
                 ) {
+                    Text("⚡ দ্রুত ডাউনলোড (360p Standard)", fontSize = 12.sp)
+                }
+
+                if (errorMsg != null) {
+                    Text(
+                        text = "⚠️ $errorMsg",
+                        color = Color(0xFFFF8A80),
+                        fontSize = 12.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                HorizontalDivider(color = Color(0xFF33333E))
+
+                Text(
+                    text = "📄 ২. সাবটাইটেল ও স্ক্রিপ্ট ডাউনলোড:",
+                    color = Color(0xFFFFB74D),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
                             val srt = DownloadHelper.generateSrtContent(clip)
@@ -267,15 +205,15 @@ fun InAppDownloadDialog(
                             if (ok) {
                                 Toast.makeText(context, "✅ .SRT সাবটাইটেল ডাউনলোড ফোল্ডারে সেভ হয়েছে!", Toast.LENGTH_LONG).show()
                             } else {
-                                Toast.makeText(context, "ডাউনলোড সম্পন্ন করা যায়নি।", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "সাবটাইটেল সেভ করা যায়নি।", Toast.LENGTH_SHORT).show()
                             }
+                            onDismiss()
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3949AB)),
-                        contentPadding = PaddingValues(vertical = 8.dp)
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3949AB))
                     ) {
-                        Text("📄 .SRT সাবটাইটেল", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("📄 .SRT ফাইল", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(
@@ -290,21 +228,21 @@ fun InAppDownloadDialog(
                             if (ok) {
                                 Toast.makeText(context, "✅ স্ক্রিপ্ট (.TXT) ডাউনলোড ফোল্ডারে সেভ হয়েছে!", Toast.LENGTH_LONG).show()
                             } else {
-                                Toast.makeText(context, "ডাউনলোড সম্পন্ন করা যায়নি।", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "স্ক্রিপ্ট সেভ করা যায়নি।", Toast.LENGTH_SHORT).show()
                             }
+                            onDismiss()
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        contentPadding = PaddingValues(vertical = 8.dp)
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
                     ) {
-                        Text("📝 স্ক্রিপ্ট (.TXT)", fontSize = 11.sp)
+                        Text("📝 স্ক্রিপ্ট (.TXT)", fontSize = 12.sp)
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, enabled = !isResolving) {
                 Text("বন্ধ করুন", color = Color(0xFFFE6230), fontWeight = FontWeight.Bold)
             }
         }
@@ -403,10 +341,17 @@ fun HomeScreen(
     var clips by remember { mutableStateOf<List<Clip>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // In-app download target
+    var showApiKeyPromptDialog by remember { mutableStateOf(false) }
+
+    // Direct in-app download target
     var downloadClipTarget by remember { mutableStateOf<Clip?>(null) }
 
     fun doScout() {
+        if (apiKey.isBlank()) {
+            showApiKeyPromptDialog = true
+            return
+        }
+
         if (inputUrl.isBlank()) {
             Toast.makeText(context, "অনুগ্রহ করে একটি ইউটিউব লিংক দিন", Toast.LENGTH_SHORT).show()
             return
@@ -443,8 +388,47 @@ fun HomeScreen(
         }
     }
 
+    // Missing API Key Dialog
+    if (showApiKeyPromptDialog) {
+        AlertDialog(
+            onDismissRequest = { showApiKeyPromptDialog = false },
+            containerColor = Color(0xFF1E1E24),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🔑 Gemini API Key প্রয়োজন", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            },
+            text = {
+                Text(
+                    text = "AI দিয়ে ভিডিও থেকে ভাইরাল ক্লিপ বের করতে আপনার ব্যক্তিগত Google Gemini API Key প্রয়োজন।\n\nএটি সম্পূর্ণ ফ্রি! আপনি Google AI Studio থেকে ফ্রি কী নিয়ে সেটিংসে পেস্ট করলেই অ্যাপটি কাজ করবে।",
+                    fontSize = 13.sp,
+                    color = Color(0xFFA0A0A8),
+                    lineHeight = 18.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showApiKeyPromptDialog = false
+                        onOpenSettings()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFE6230))
+                ) {
+                    Text("⚙️ সেটিংসে কী বসান", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showApiKeyPromptDialog = false }) {
+                    Text("পরে করব", color = Color.Gray)
+                }
+            }
+        )
+    }
+
     if (downloadClipTarget != null && activeVideo != null) {
-        InAppDownloadDialog(
+        DirectDownloadDialog(
             video = activeVideo!!,
             clip = downloadClipTarget!!,
             onDismiss = { downloadClipTarget = null }
@@ -522,11 +506,36 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "কম্পিউটার বা সার্ভার ছাড়া সরাসরি আপনার ফোনেই চলে। AI দিয়ে বাংলা সাবটাইটেল ও ক্লিপ বের করে অ্যাপের ভেতর থেকেই সরাসরি ডাউনলোড করুন।",
+                            text = "কম্পিউটার বা সার্ভার ছাড়া সরাসরি আপনার ফোনেই চলে। AI দিয়ে বাংলা সাবটাইটেল ও ক্লিপ বের করে অ্যাপের ভেতর থেকেই সরাসরি ফোনে ডাউনলোড করুন।",
                             fontSize = 12.sp,
                             color = Color(0xFFA0A0A8),
                             lineHeight = 16.sp
                         )
+
+                        if (apiKey.isBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onOpenSettings() },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0x33FFB74D))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🔑", fontSize = 16.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "আপনার Gemini API কী যোগ করতে এখানে ক্লিক করুন (সেটিংস)",
+                                        color = Color(0xFFFFB74D),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -783,7 +792,7 @@ fun HomeScreen(
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            // Action buttons: Preview, In-App Download, Share
+                            // Action buttons: Preview, Direct In-App Download, Share
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -850,7 +859,7 @@ fun ClipDetailScreen(
     var showDownloadDialog by remember { mutableStateOf(false) }
 
     if (showDownloadDialog) {
-        InAppDownloadDialog(
+        DirectDownloadDialog(
             video = video,
             clip = clip,
             onDismiss = { showDownloadDialog = false }
@@ -1123,7 +1132,7 @@ fun ClipDetailScreen(
                 }
             }
 
-            // Direct Actions: DOWNLOAD (In-App), YouTube, Copy, Share
+            // Direct Actions: DOWNLOAD (Direct in-app), YouTube, Copy, Share
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     // Big In-App Download Button
@@ -1135,7 +1144,7 @@ fun ClipDetailScreen(
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
                     ) {
-                        Text("📥 একদম অ্যাপের ভেতরে থেকেই ডাউনলোড করুন", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("📥 সরাসরি ফোনে ভিডিও ডাউনলোড করুন", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Button(
@@ -1236,7 +1245,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "আপনার প্রি-কনফিগার করা Gemini API কী ইতিমধ্যে যুক্ত আছে। চাইলে নতুন কী বসাতে পারেন।",
+                            text = "আপনার ব্যক্তিগত Google Gemini API Key নিচে পেস্ট করুন। এটি সম্পূর্ণ আপনার ফোনের নিরাপদ মেমোরিতে সেভ থাকবে।",
                             color = Color(0xFFA0A0A8),
                             fontSize = 12.sp,
                             lineHeight = 16.sp
@@ -1254,7 +1263,7 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = apiKeyInput,
                             onValueChange = { apiKeyInput = it },
-                            placeholder = { Text("Gemini API Key...", color = Color.Gray) },
+                            placeholder = { Text("আপনার Gemini API Key পেস্ট করুন...", color = Color.Gray, fontSize = 13.sp) },
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color.White,
@@ -1337,7 +1346,7 @@ fun SettingsScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Version: 2.2 (Standalone Mobile)",
+                                    text = "Version: 2.3 (Standalone Mobile)",
                                     color = Color(0xFF9E9EA4),
                                     fontSize = 12.sp
                                 )
@@ -1345,7 +1354,7 @@ fun SettingsScreen(
                         }
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "Created by Faizul Islam Rifat\n\nবৈশিষ্ট্যসমূহ:\n• সম্পূর্ণ মোবাইলেই চলে, কোনো পিসি সার্ভার দরকার নেই।\n• একদম অ্যাপের ভেতর থেকেই সরাসরি ভিডিও ডাউনলোড।\n• ব্র্যান্ড লোগোর চারপাশে সুন্দর স্পেসিং ও প্রিমিয়াম ডিজাইন।",
+                            text = "Created by Faizul Islam Rifat\n\nবৈশিষ্ট্যসমূহ:\n• ১০০% সরাসরি ফোনে ডাউনলোড (কোনো বাহ্যিক ওয়েবসাইটে নেবে না)।\n• এপিআই কী কোনো সার্ভার বা গিটহাবে জমা থাকে না, কেবল আপনার ফোনেই থাকে।\n• আকর্ষণীয় ব্র্যান্ড লোগো ও বাংলা সাবটাইটেল সাপোর্ট।",
                             color = Color(0xFFA0A0A8),
                             fontSize = 13.sp,
                             lineHeight = 18.sp

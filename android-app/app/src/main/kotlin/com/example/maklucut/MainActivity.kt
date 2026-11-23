@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
             MAKLUCUTTheme {
                 var currentScreen by remember { mutableStateOf(AppScreen.HOME) }
                 var apiKey by remember {
-                    mutableStateOf(prefs.getString("gemini_api_key", GeminiScout.DEFAULT_API_KEY) ?: GeminiScout.DEFAULT_API_KEY)
+                    mutableStateOf(prefs.getString("gemini_api_key", "") ?: "")
                 }
                 var modelName by remember {
                     mutableStateOf(prefs.getString("gemini_model", GeminiScout.DEFAULT_MODEL) ?: GeminiScout.DEFAULT_MODEL)
